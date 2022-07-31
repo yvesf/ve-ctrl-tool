@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -247,15 +248,6 @@ func init() {
 			},
 		},
 		{
-			command: `test`,
-			args:    0,
-			help:    ``,
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				mk2.Write(transportFrame{data: []byte{0x05, 0xff, 0x57, 0x32, 0x81, 0x00}})
-				return nil
-			},
-		},
-		{
 			command: "set-address",
 			args:    1,
 			help:    "set-address selects the address (\"A\" command, default 0)",
@@ -281,6 +273,47 @@ func init() {
 					return fmt.Errorf("address failed: %w", err)
 				}
 				fmt.Printf("address=0x%02x\n", addr)
+				return nil
+			},
+		},
+		{
+			command: "test-ess",
+			args:    1,
+			help:    "test <arg> (run loop sending signed value to ram 131)",
+			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+				val, err := strconv.Atoi(args[0])
+				if err != nil {
+					return fmt.Errorf("parse high-byte failed: %w", err)
+				}
+				var write = uint16(val)
+				if val < 0 {
+					write = uint16(65536 - (val * -1))
+				}
+
+				fmt.Printf("Press enter to stop\n")
+				childCtx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				go func() {
+					var x = []byte{0}
+					_, _ = os.Stdin.Read(x)
+					cancel()
+				}()
+				for childCtx.Err() == nil {
+					err := mk2.CommandWriteRAMVarData(ctx, 131, byte(write&0xff), byte((write>>8)&0xff))
+					if err != nil {
+						return err
+					}
+					select {
+					case <-childCtx.Done():
+					case <-time.After(time.Second):
+					}
+
+					mainState, subState, err := mk2.CommandGetSetDeviceState(ctx, DeviceStateRequestStateInquiry)
+					if err != nil {
+						return fmt.Errorf("command set-state failed: %w", err)
+					}
+					println("device state", mainState, subState)
+				}
 				return nil
 			},
 		},
