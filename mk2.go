@@ -163,7 +163,7 @@ func (m Mk2) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID
 var ErrVariableNotSupported = errors.New("VARIABLE_NOT_SUPPORTED")
 
 func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId byte) (value uint16, err error) {
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x30, ramId)
+	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x30, ramId, 0x00)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute CommandReadRAMVar: %w", err)
 	}
@@ -176,16 +176,8 @@ func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId byte) (value uint16, e
 	}
 
 	if len(frame.data) != 2+4 && len(frame.data) != 2+6 {
-		// BUG?? We get two times the same value here
-		/**
-		Please note that you will get an extra ValueB. This is a feature of newer Multi firmware versions.
-		Because the IDs range from 0..255 the Hi(ID) field would always be 0.
-		Newer Multi firmwares allow you to specify a second ID in this field.
-		So in this case ValueB is the value of RAMID 0 because the 0x00 is interpreted as the second ID.
-		RAMID 0 corresponds with UMains (This can be found in paragraph 7.3.11 of the 'Interfacing with VE.Bus products' document.)
-		So in this example the UMains value is 0x5A52 ⇒ 231.22V NOTE: You will always get a ValueB in the response.
-		You can make handy use of this by reading an extra RAMID or you can ignore it if you don’t need it.
-		*/
+		// Old devices send 4, newer support requesting two ram-ids at the same time.
+		// we drop the second as we asked for 0x00 (UMains) but don't really care about it.
 		return 0, fmt.Errorf("invalid response length to CommandReadRAMVar")
 	}
 
@@ -193,7 +185,7 @@ func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId byte) (value uint16, e
 }
 
 func (m Mk2) CommandWriteRAMVarData(ctx context.Context, ram uint16, dataLow, dataHigh byte) error {
-	m.Write(transportFrame{data: []byte{'W', 0x32, byte(ram & 0xff), byte(ram >> 8)}}) // no response
+	m.Write(transportFrame{data: []byte{0x05, 0xff, 'W', 0x32, byte(ram & 0xff), byte(ram >> 8)}}) // no response
 	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x34, dataLow, dataHigh)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteRAMVarData: %w", err)
@@ -202,6 +194,32 @@ func (m Mk2) CommandWriteRAMVarData(ctx context.Context, ram uint16, dataLow, da
 		return fmt.Errorf("write failed")
 	}
 	return nil
+}
+
+func (m Mk2) CommandWriteViaID(ctx context.Context, id byte, dataLow, dataHigh byte) error {
+	// [1]: true => ram value only, false => ram and eeprom
+	// [0]: true: setting, false: ram var
+	//var flags = byte(0b00000010)
+	var flags = byte(0b00000000)
+	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x37, flags, id, dataLow, dataHigh)
+	if err != nil {
+		return fmt.Errorf("failed to execute CommandWriteViaID: %w", err)
+	}
+	if len(frame.data) != 4 {
+		return fmt.Errorf("wrong response frame size")
+	}
+	switch frame.data[3] {
+	case 0x80:
+		return fmt.Errorf("command not supported")
+	case 0x87:
+		return nil // write ram OK
+	case 0x88:
+		return nil // write setting OK
+	case 0x9b:
+		return fmt.Errorf("access level required")
+	default:
+		return fmt.Errorf("unknown response code")
+	}
 }
 
 func (m Mk2) CommandWriteSettingData(ctx context.Context, setting uint16, dataLow, dataHigh byte) error {

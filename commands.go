@@ -110,7 +110,7 @@ func init() {
 				if err != nil {
 					return fmt.Errorf("read-ram command failed: %w", err)
 				}
-				fmt.Printf("value=%d value=0b%b value=0x%x\n", value, value, value)
+				fmt.Printf("value=%d value(signed)=%d value=0b%b value=0x%x\n", value, int16(value), value, value)
 				return nil
 			},
 		},
@@ -135,6 +135,33 @@ func init() {
 					return fmt.Errorf("parse high-byte failed: %w", err)
 				}
 				err = mk2.CommandWriteRAMVarData(ctx, uint16(ramID), byte(low), byte(high))
+				if err != nil {
+					return fmt.Errorf("write-ram failed: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			command: `write-ram-id`,
+			args:    3,
+			help:    "write-ram-id <ram-id> <low-byte> <high-byte> (CommandWriteViaID)",
+			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+				if len(args) != 3 {
+					return fmt.Errorf("wrong number of args")
+				}
+				ramID, err := strconv.Atoi(args[0])
+				if err != nil {
+					return fmt.Errorf("parse ram-id failed: %w", err)
+				}
+				low, err := strconv.Atoi(args[1])
+				if err != nil {
+					return fmt.Errorf("parse low-byte failed: %w", err)
+				}
+				high, err := strconv.Atoi(args[2])
+				if err != nil {
+					return fmt.Errorf("parse high-byte failed: %w", err)
+				}
+				err = mk2.CommandWriteViaID(ctx, byte(ramID), byte(low), byte(high))
 				if err != nil {
 					return fmt.Errorf("write-ram failed: %w", err)
 				}
@@ -220,15 +247,40 @@ func init() {
 			},
 		},
 		{
-			command: "address",
+			command: `test`,
 			args:    0,
-			help:    "address gets the current address (\"A\" command)",
+			help:    ``,
 			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				address, err := mk2.GetAddress(ctx)
+				mk2.Write(transportFrame{data: []byte{0x05, 0xff, 0x57, 0x32, 0x81, 0x00}})
+				return nil
+			},
+		},
+		{
+			command: "set-address",
+			args:    1,
+			help:    "set-address selects the address (\"A\" command, default 0)",
+			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+				addr, err := strconv.Atoi(args[0])
+				if err != nil {
+					return fmt.Errorf("parse addr failed: %w", err)
+				}
+				err = mk2.SetAddress(ctx, byte(addr))
 				if err != nil {
 					return fmt.Errorf("address failed: %w", err)
 				}
-				fmt.Printf("address=%v\n", address)
+				return nil
+			},
+		},
+		{
+			command: "get-address",
+			args:    0,
+			help:    "address gets the current address (\"A\" command)",
+			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+				addr, err := mk2.GetAddress(ctx)
+				if err != nil {
+					return fmt.Errorf("address failed: %w", err)
+				}
+				fmt.Printf("address=0x%02x\n", addr)
 				return nil
 			},
 		},

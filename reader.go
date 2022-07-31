@@ -120,10 +120,10 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 					}
 				}
 
-				if len(listeners) == 0 && len(f.data) == 8 && f.data[2] == 'V' {
-					log.Trace().Msgf("received Version %v", f.data[2:])
+				if len(f.data) == 8 && f.data[2] == 'V' {
+					log.Trace().Msgf("received broadcase frame 'V': %v", hexArray(f.data[2:]))
 				} else {
-					log.Debug().Msgf("received Frame data %v", hexArray(f.data))
+					log.Debug().Msgf("received frame: %v", hexArray(f.data))
 				}
 			}
 		}
@@ -148,7 +148,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 			if n == 0 {
 				continue
 			}
-			log.Trace().Msgf("Read: %v\n", hexArray(frameBuf[0:n]))
+			log.Trace().Msgf("Read: %v", hexArray(frameBuf[0:n]))
 			_, _ = scannerBuffer.Write(frameBuf[0:n])
 
 			if scannerBuffer.Len() == 0 {

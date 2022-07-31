@@ -75,7 +75,7 @@ func main() {
 	defer mk2.Wait()
 
 	if *flagVEAddress > 0 {
-		err = mk2.SetAddress(ctx, 0x00)
+		err = mk2.SetAddress(ctx, byte(*flagVEAddress))
 		if err != nil {
 			panic(err)
 		}
@@ -88,7 +88,6 @@ func main() {
 	if args := flag.Args(); len(args) > 0 {
 		execute(ctx, mk2, args)
 		cancel()
-		mk2.Wait()
 		return
 	}
 
@@ -113,8 +112,13 @@ func main() {
 			if len(inputTokens) == 0 {
 				continue
 			}
+			if len(inputTokens) == 1 && inputTokens[0] == `quit` {
+				cancel()
+				break
+			}
 			execute(ctx, mk2, inputTokens)
 		} else if err == liner.ErrPromptAborted {
+			fmt.Printf("Send EOF (CTRL-D) or execute 'quit' to exit\n")
 			continue
 		} else if err == io.EOF {
 			fmt.Printf("\n")
@@ -124,7 +128,7 @@ func main() {
 			log.Error().Err(err).Msg("error reading line")
 		}
 	}
-	log.Info().Msg("shutdown")
+	log.Info().Msg("start shutdown")
 }
 
 func execute(ctx context.Context, mk2 Mk2, tokens []string) {
