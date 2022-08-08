@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+
+	"ve-ctrl-tool/victron"
 )
 
 type Mk2 struct {
@@ -15,7 +17,8 @@ type Mk2 struct {
 // SetAddress selects VE.Bus device at 'address'
 func (m Mk2) SetAddress(ctx context.Context, address byte) error {
 	log.Debug().Msgf("SetAddress 0x%x", address)
-	frame, err := m.WriteAndReadFrame(ctx, 'A', 0x01, address)
+	// 0x01 means "set"
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandA, 0x01, address)
 	if err != nil {
 		return fmt.Errorf("failed to select address: %w", err)
 	}
@@ -29,7 +32,8 @@ func (m Mk2) SetAddress(ctx context.Context, address byte) error {
 
 func (m Mk2) GetAddress(ctx context.Context) (byte, error) {
 	log.Debug().Msg("GetAddress")
-	frame, err := m.WriteAndReadFrame(ctx, 'A', 0x01 /*ignored:*/, 0x00)
+	// 0x00 means "not set"
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandA, 0x00 /*ignored:*/, 0x00)
 	if err != nil {
 		return 0, fmt.Errorf("failed to select address: %w", err)
 	}
@@ -41,7 +45,7 @@ func (m Mk2) GetAddress(ctx context.Context) (byte, error) {
 // CommandSendSoftwareVersionPart0 is used to read the state of the device or to force the unit to go into a specific state.
 func (m Mk2) CommandSendSoftwareVersionPart0(ctx context.Context) (int, error) {
 	log.Debug().Msg("CommandSendSoftwareVersionPart0 request")
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x05, 0x00, 0x00)
+	frame, err := m.WriteAndReadFrame(ctx, 'W', victron.WCommandSendSoftwareVersionPart0, 0x00, 0x00)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute CommandSendSoftwareVersion: %w", err)
 	}
@@ -56,7 +60,7 @@ func (m Mk2) CommandSendSoftwareVersionPart0(ctx context.Context) (int, error) {
 // CommandSendSoftwareVersionPart1 is used to read the state of the device or to force the unit to go into a specific state.
 func (m Mk2) CommandSendSoftwareVersionPart1(ctx context.Context) (int, error) {
 	log.Debug().Msg("CommandSendSoftwareVersionPart1 request")
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x06, 0x00, 0x00)
+	frame, err := m.WriteAndReadFrame(ctx, 'W', victron.WCommandSendSoftwareVersionPart1, 0x00, 0x00)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute CommandSendSoftwareVersion: %w", err)
 	}
@@ -70,6 +74,7 @@ func (m Mk2) CommandSendSoftwareVersionPart1(ctx context.Context) (int, error) {
 
 type DeviceStateRequestState byte
 
+//nolint:deadcode
 const (
 	DeviceStateRequestStateInquiry           = 0x0
 	DeviceStateRequestStateForceToEqualise   = 0x1
@@ -112,7 +117,7 @@ var DeviceStateResponseSubStates = map[int]DeviceStateResponseSubState{
 // Passing 'state' 0 means no change, just reading the current state.
 func (m Mk2) CommandGetSetDeviceState(ctx context.Context, setState DeviceStateRequestState) (state DeviceStateResponseState, subState DeviceStateResponseSubState, err error) {
 	log.Debug().Msgf("CommandGetSetDeviceState setState=0x%x", setState)
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x0e, byte(setState), 0x00)
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandW, victron.WCommandGetSetDeviceState, byte(setState), 0x00)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to execute CommandGetSetDeviceState: %w", err)
 	}
@@ -142,14 +147,14 @@ func (m Mk2) CommandGetSetDeviceState(ctx context.Context, setState DeviceStateR
 var ErrSettingNotSupported = errors.New("SETTING_NOT_SUPPORTED")
 
 func (m Mk2) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID byte) (lowValue, highValue byte, err error) {
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x31, lowSettingID, highSettingID)
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandW, victron.WCommandReadSetting, lowSettingID, highSettingID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to execute CommandGetSetDeviceState: %w", err)
 	}
-	if frame.data[3] == 0x91 {
+	if frame.data[3] == victron.WReplySettingNotSupported {
 		return 0, 0, ErrSettingNotSupported
 	}
-	if frame.data[3] != 0x86 {
+	if frame.data[3] != victron.WReplyReadSettingOK {
 		return 0, 0, fmt.Errorf("invalid response code to CommandReadSetting")
 	}
 
@@ -162,38 +167,44 @@ func (m Mk2) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID
 
 var ErrVariableNotSupported = errors.New("VARIABLE_NOT_SUPPORTED")
 
-func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId byte) (value uint16, err error) {
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x30, ramId, 0x00)
+func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId0, ramId1 byte) (value0, value1 uint16, err error) {
+	frame, err := m.WriteAndReadFrame(ctx, 'W', victron.WCommandReadRAMVar, ramId0, ramId1)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute CommandReadRAMVar: %w", err)
+		return 0, 0, fmt.Errorf("failed to execute CommandReadRAMVar: %w", err)
 	}
-	if frame.data[3] == 0x90 {
-		return 0, ErrVariableNotSupported
+	if frame.data[3] == victron.WReplyVariableNotSupported {
+		return 0, 0, ErrVariableNotSupported
 	}
 
-	if frame.data[3] != 0x85 {
-		return 0, fmt.Errorf("invalid response code to CommandReadRAMVar")
+	if frame.data[3] != victron.WReplyReadRAMOK {
+		return 0, 0, fmt.Errorf("invalid response code to CommandReadRAMVar: %v", victron.WReply(frame.data[3]).String())
 	}
 
 	if len(frame.data) != 2+4 && len(frame.data) != 2+6 {
 		// Old devices send 4, newer support requesting two ram-ids at the same time.
 		// we drop the second as we asked for 0x00 (UMains) but don't really care about it.
-		return 0, fmt.Errorf("invalid response length to CommandReadRAMVar")
+		return 0, 0, fmt.Errorf("invalid response length to CommandReadRAMVar")
 	}
 
-	return uint16(frame.data[2+2]) + uint16(frame.data[2+3])<<8, nil
+	return uint16(frame.data[2+2]) + uint16(frame.data[2+3])<<8, uint16(frame.data[2+4]) + uint16(frame.data[2+5])<<8, nil
 }
 
-func (m Mk2) CommandWriteRAMVarData(ctx context.Context, ram uint16, dataLow, dataHigh byte) error {
-	m.Write(transportFrame{data: []byte{0x05, 0xff, 'W', 0x32, byte(ram & 0xff), byte(ram >> 8)}}) // no response
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x34, dataLow, dataHigh)
+func (m Mk2) CommandWriteRAMVarData(ctx context.Context, ram uint16, value int16) error {
+	s := victron.MakeSigned16(value)
+	m.Write(transportFrame{data: []byte{0x05, 0xff, victron.CommandW, victron.WCommandWriteRAMVar, byte(ram & 0xff), byte(ram >> 8)}}) // no response
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandW, victron.WCommandWriteData, s.Low, s.High)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteRAMVarData: %w", err)
 	}
-	if frame.data[3] != 0x87 {
-		return fmt.Errorf("write failed")
+	if len(frame.data) < 4 {
+		return fmt.Errorf("wrong response frame size")
 	}
-	return nil
+	switch frame.data[3] {
+	case victron.WReplySuccesfulRAMWrite:
+		return nil
+	default:
+		return fmt.Errorf("unknown response: %v", victron.WReply(frame.data[3]).String())
+	}
 }
 
 func (m Mk2) CommandWriteViaID(ctx context.Context, id byte, dataLow, dataHigh byte) error {
@@ -201,46 +212,29 @@ func (m Mk2) CommandWriteViaID(ctx context.Context, id byte, dataLow, dataHigh b
 	// [0]: true: setting, false: ram var
 	//var flags = byte(0b00000010)
 	var flags = byte(0b00000000)
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x37, flags, id, dataLow, dataHigh)
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandW, victron.WCommandWriteViaID, flags, id, dataLow, dataHigh)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteViaID: %w", err)
 	}
-	if len(frame.data) != 4 {
+	if len(frame.data) < 5 {
 		return fmt.Errorf("wrong response frame size")
 	}
 	switch frame.data[3] {
-	case 0x80:
-		return fmt.Errorf("command not supported")
-	case 0x87:
-		return nil // write ram OK
-	case 0x88:
-		return nil // write setting OK
-	case 0x9b:
-		return fmt.Errorf("access level required")
+	case victron.WReplySuccesfulRAMWrite, victron.WReplySuccesfulSettingWrite:
+		return nil
 	default:
-		return fmt.Errorf("unknown response code")
+		return fmt.Errorf("unknown response: %v", victron.WReply(frame.data[3]).String())
 	}
 }
 
 func (m Mk2) CommandWriteSettingData(ctx context.Context, setting uint16, dataLow, dataHigh byte) error {
-	m.Write(transportFrame{data: []byte{0x05, 0xff, 'W', 0x33, byte(setting & 0xff), byte(setting >> 8)}}) // no response
-	frame, err := m.WriteAndReadFrame(ctx, 'W', 0x34, dataLow, dataHigh)
+	m.Write(transportFrame{data: []byte{0x05, 0xff, victron.CommandW, victron.WCommandWriteSetting, byte(setting & 0xff), byte(setting >> 8)}}) // no response
+	frame, err := m.WriteAndReadFrame(ctx, victron.CommandW, victron.WCommandWriteData, dataLow, dataHigh)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteSettingData:: %w", err)
 	}
-	if frame.data[3] != 0x88 {
+	if frame.data[3] != victron.WReplySuccesfulSettingWrite {
 		return fmt.Errorf("write failed")
-	}
-	return nil
-}
-
-func (m Mk2) SetAssist(ctx context.Context, ampere int16) error {
-	frame, err := m.WriteAndReadFrame(ctx, 'S', 0x03, byte(ampere&0xff), byte(ampere>>8), 0x01, 0b10000000)
-	if err != nil {
-		return fmt.Errorf("failed to execute SetAssist: %w", err)
-	}
-	if frame.data[2] != 'S' {
-		return fmt.Errorf("SetAssist failed")
 	}
 	return nil
 }

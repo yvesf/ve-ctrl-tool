@@ -1,8 +1,9 @@
 module ve-ctrl-tool
 
-go 1.17
+go 1.18
 
 require (
+	github.com/felixge/pidctrl v0.0.0-20160307080219-7b13bcae7243
 	github.com/goburrow/serial v0.1.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/peterh/liner v1.2.2

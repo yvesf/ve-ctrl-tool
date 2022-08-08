@@ -68,11 +68,13 @@ func main() {
 		time.Sleep(time.Second * 1)
 	}
 
-	err := mk2.StartReader(ctx)
+	mk2Ctx, mk2CtxCancel := context.WithCancel(context.Background())
+	err := mk2.StartReader(mk2Ctx)
 	if err != nil {
 		panic(err)
 	}
 	defer mk2.Wait()
+	defer mk2CtxCancel()
 
 	if *flagVEAddress > 0 {
 		err = mk2.SetAddress(ctx, byte(*flagVEAddress))
@@ -86,8 +88,9 @@ func main() {
 
 	// if arguments passed then execute as command
 	if args := flag.Args(); len(args) > 0 {
-		execute(ctx, mk2, args)
-		cancel()
+		if err := execute(ctx, mk2, args); err != nil {
+			log.Error().Err(err).Msg("failed")
+		}
 		return
 	}
 
@@ -116,7 +119,13 @@ func main() {
 				cancel()
 				break
 			}
-			execute(ctx, mk2, inputTokens)
+			err = execute(ctx, mk2, inputTokens)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+			}
+			if err == nil {
+				line.AppendHistory(response)
+			}
 		} else if err == liner.ErrPromptAborted {
 			fmt.Printf("Send EOF (CTRL-D) or execute 'quit' to exit\n")
 			continue
@@ -131,19 +140,20 @@ func main() {
 	log.Info().Msg("start shutdown")
 }
 
-func execute(ctx context.Context, mk2 Mk2, tokens []string) {
+func execute(ctx context.Context, mk2 Mk2, tokens []string) error {
 	for _, comm := range commands {
 		if comm.command != tokens[0] {
 			continue
 		}
 		if comm.args != len(tokens)-1 {
-			log.Error().Msgf("invalid number of arguments for command %v, expected %v got %v",
+			return fmt.Errorf("invalid number of arguments for command %v, expected %v got %v",
 				comm.command, comm.args, len(tokens)-1)
-			return
 		}
 		err := comm.fun(ctx, mk2, tokens[1:]...)
 		if err != nil {
-			log.Error().Err(err).Msgf("Command failed %v", tokens)
+			return fmt.Errorf("command failed %v: %v", tokens, err)
 		}
+		return nil
 	}
+	return fmt.Errorf("command not found: %v", tokens[0])
 }

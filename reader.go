@@ -121,7 +121,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 				}
 
 				if len(f.data) == 8 && f.data[2] == 'V' {
-					log.Trace().Msgf("received broadcase frame 'V': %v", hexArray(f.data[2:]))
+					log.Trace().Msgf("received broadcast frame 'V': %v", hexArray(f.data[2:]))
 				} else {
 					log.Debug().Msgf("received frame: %v", hexArray(f.data))
 				}
