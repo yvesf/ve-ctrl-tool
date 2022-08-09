@@ -2,59 +2,136 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
+	"github.com/bsm/openmetrics"
 	"github.com/felixge/pidctrl"
 	"github.com/rs/zerolog/log"
 
 	"ve-ctrl-tool/backoff"
 	"ve-ctrl-tool/meter"
 	"ve-ctrl-tool/victron"
+	"ve-ctrl-tool/victron/veBus"
 )
 
-func CommandEssShelly(ctx context.Context, mk2 Mk2, args ...string) error {
+var (
+	metricControlSetpoint = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_pid_setpoint",
+		Unit: "watt",
+		Help: "The current setpoint calculated by the PID controller",
+	})
+	metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_pid_input",
+		Unit: "watt",
+		Help: "The current input for the PID controller",
+	})
+	metricControlInputDiff = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_pid_input_diff",
+		Unit: "watt",
+		Help: "The current input difference for stabilization of the PID controller",
+	})
+	metricControlPIDMin = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_pid_output_min",
+		Unit: "watt",
+		Help: "PID min",
+	})
+	metricControlPIDMax = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_pid_output_max",
+		Unit: "watt",
+		Help: "PID max",
+	})
+	metricMultiplusSetpoint = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_multiplus_setpoint",
+		Unit: "watt",
+		Help: "The setpoint written to the multiplus",
+	})
+	metricMultiplusIBat = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_multiplus_ibat",
+		Unit: "ampere",
+		Help: "Current of the multiplus battery, negative=discharge",
+	})
+	metricMultiplusUBat = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_multiplus_ubat",
+		Unit: "voltage",
+		Help: "Voltage of the multiplus battery",
+	})
+	metricMultiplusInverterPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name: "ess_multiplus_inverter_power",
+		Unit: "watt",
+		Help: "Ram InverterPower1",
+	})
+	metricShellyPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+		Name:   "ess_shelly_power",
+		Unit:   "watt",
+		Help:   "Power readings from shelly device",
+		Labels: []string{"meter"},
+	})
+)
+
+func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 	const (
-		maxWattCharge   = 500.0
-		maxWattInverter = 500.0
-		testOffset      = -500 // todo: Should be 0 for production mode. -500 means "measure consumption - 500w"
+		inverterPeakMaximumTimeWindow = time.Minute * 15 // in the last 15min.. for max 15min
 	)
-	b := backoff.NewExponentialBackoff(time.Second, time.Second*25)
+	var (
+		flagset             = flag.NewFlagSet("ess-shelly", flag.ContinueOnError)
+		flagMaxWattCharge   = flagset.Float64("maxCharge", 250.0, "Maximum ESS Setpoint for charging (negative setpoint)")
+		flagMaxWattInverter = flagset.Float64("maxInverter",
+			60.0,
+			"Maximum ESS Setpoint for inverter (positive setpoint)")
+		flagMaxWattInverterPeak = flagset.Float64("maxInverterPeak",
+			800,
+			"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
+		flagOffset          = flagset.Float64("offset", -10.0, "Power measurement offset")
+		flagZeroPointWindow = flagset.Float64("zeroWindow", 20, "Do not operate if measurement is in this +/- window")
+	)
+
+	if err := flagset.Parse(args); err == flag.ErrHelp {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
 	wg := sync.WaitGroup{}
 
 	// childCtx is just used to communicate shutdown to go-routines
 	childCtx, childCtxCancel := context.WithCancel(context.Background())
 	defer childCtxCancel()
 
-	// process Variables
-	var (
-		setpointSet, meterMeasurement Measurement
-		setpointComitted              int16
-	)
+	// shared Variables
+	var setpointSet, meterMeasurement, inverterPower Measurement
 
 	// Run loop to send commands to the Multiplus
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		defer func() {
+			childCtxCancel()
 			log.Debug().Msg("multiplus go-routine done")
+			wg.Done()
 		}()
+		var lastUpdate time.Time
 		ctx := context.Background()
+		b := backoff.NewExponentialBackoff(time.Second, time.Second*50)
 
-		var errors = 0
+		var (
+			errors           = 0
+			setpointComitted int16
+		)
 	measurementLoop:
 		for {
+			var (
+				iBat, uBat, inverterPowerRAM, setpoint int16
+				err                                    error
+			)
+
 			select {
 			case <-childCtx.Done():
 				break measurementLoop
 			case <-time.After(time.Millisecond * 50):
 			}
-
-			var (
-				iBat, uBat uint16
-				setpoint   int16
-			)
 
 			if v, ok := setpointSet.Get(); ok {
 				setpoint = int16(v.ConsumptionPositive())
@@ -62,32 +139,49 @@ func CommandEssShelly(ctx context.Context, mk2 Mk2, args ...string) error {
 				setpoint = 0
 			}
 
-			log.Debug().Int16("setpoint", setpoint).Msg("write setpoint to multiplus")
+			if setpoint != setpointComitted || time.Since(lastUpdate) > time.Second*30 {
+				log.Debug().Int16("setpoint", setpoint).Msg("write setpoint to multiplus")
+				err := mk2.CommandWriteRAMVarDataSigned(ctx, veBus.RamIDAssistent129, setpoint)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to write to RAM 129")
+					goto error
+				}
 
-			err := mk2.CommandWriteRAMVarData(ctx, victron.RamIDAssistent129, setpoint)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to write to RAM 129")
-				goto error
+				setpointComitted = setpoint
+				lastUpdate = time.Now()
+				log.Info().Int16("setpoint-committed", setpointComitted).
+					Msg("Multiplus set")
+				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
 			}
 
-			setpointComitted = setpoint
-			log.Info().Int16("setpoint-committed", setpointComitted).
-				Msg("Multiplus set")
-
-			iBat, uBat, err = mk2.CommandReadRAMVar(ctx, victron.RamIDIBat, victron.RamIDUBat)
+			iBat, uBat, err = mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDIBat, veBus.RamIDUBat)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to read IBat")
+				log.Error().Err(err).Msg("failed to read IBat/UBat")
 				goto error
 			}
-			log.Info().
-				Int16("IBat", victron.ParseSigned16(iBat).Int16()).
-				Int16("UBat", victron.ParseSigned16(uBat).Int16()).
+			inverterPowerRAM, _, err = mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDInverterPower1, 0)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to read InverterPower1")
+				goto error
+			}
+			log.Debug().Float32("IBat", float32(iBat)/10).
+				Float32("UBat", float32(uBat)/100).
+				Float32("InverterPower", float32(inverterPowerRAM)).
 				Msg("Multiplus Stats")
+			metricMultiplusIBat.With().Set(float64(iBat) / 10)
+			metricMultiplusUBat.With().Set(float64(uBat) / 100)
+			metricMultiplusInverterPower.With().Set(float64(inverterPowerRAM))
+			inverterPower.Set(PowerFlowWatt(inverterPowerRAM))
 
 			errors = 0
 			continue
 
 		error:
+			metricMultiplusInverterPower.With().Reset(openmetrics.GaugeOptions{})
+			metricMultiplusUBat.With().Reset(openmetrics.GaugeOptions{})
+			metricMultiplusIBat.With().Reset(openmetrics.GaugeOptions{})
+			metricMultiplusSetpoint.With().Reset(openmetrics.GaugeOptions{})
+
 			errors++
 			sleepDuration, next := b.Next(errors)
 			if !next {
@@ -104,36 +198,50 @@ func CommandEssShelly(ctx context.Context, mk2 Mk2, args ...string) error {
 	wg.Add(1)
 	go func() {
 		const (
-			shellyReadInterval = time.Second * 1
+			shellyReadInterval = time.Millisecond * 800
 		)
-		defer wg.Done()
 		var t = time.NewTimer(0)
 		defer t.Stop()
 		defer func() {
+			t.Stop()
+			childCtxCancel()
 			log.Debug().Msg("shelly go-routine done")
+			wg.Done()
 		}()
 
-		buf := NewRingbuf(10)
+		buf := NewRingbuf(5)
 		shelly := meter.NewShelly3EM(args[0])
 		b := backoff.NewExponentialBackoff(shellyReadInterval, shellyReadInterval*50)
 		errCount := 0
 
+	measurementLoop:
 		for {
 			select {
 			case <-t.C:
-				value, err := shelly.ReadTotalPower()
+				value, err := shelly.Read()
 				if err != nil {
 					log.Error().Err(err).Msg("failed to read from shelly")
 					errCount++
 					meterMeasurement.SetInvalid()
-					wait, _ := b.Next(errCount)
+					wait, next := b.Next(errCount)
+					if !next {
+						break measurementLoop
+					}
 					t.Reset(wait)
 					continue
 				}
 				errCount = 0
 
-				buf.Add(value + testOffset)
-				meterMeasurement.Set(ConsumptionPositive(buf.Mean()))
+				metricShellyPower.With("total").Set(value.TotalPower)
+				for i, m := range value.EMeters {
+					metricShellyPower.With(fmt.Sprintf("emeter%d", i)).Set(m.Power)
+				}
+
+				buf.Add(value.TotalPower)
+				mean := buf.Mean()
+				metricShellyPower.With("totalMean").Set(mean)
+				meterMeasurement.Set(ConsumptionPositive(mean))
+
 				t.Reset(shellyReadInterval)
 			case <-childCtx.Done():
 				return
@@ -141,8 +249,12 @@ func CommandEssShelly(ctx context.Context, mk2 Mk2, args ...string) error {
 		}
 	}()
 
-	pidC := pidctrl.NewPIDController(0.01, 0.1, 0.0)
-	pidC.SetOutputLimits(-1*maxWattCharge, maxWattInverter)
+	var (
+		// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
+		timeLastInverterProduction time.Time
+	)
+	pidC := pidctrl.NewPIDController(0.05, 0.15, 0.01)
+	pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
 
 controlLoop:
 	for ctx.Err() == nil {
@@ -151,21 +263,50 @@ controlLoop:
 			break controlLoop
 		case <-childCtx.Done():
 			break controlLoop
-		default:
+		case <-time.After(time.Millisecond * 250):
 		}
-		time.Sleep(time.Second * 2)
 		m, haveMeasurement := meterMeasurement.Get()
 		if !haveMeasurement {
 			setpointSet.SetInvalid()
+			metricControlSetpoint.With().Reset(openmetrics.GaugeOptions{})
 			continue
 		}
-		controllerOut := pidC.Update(m.ConsumptionNegative()) // Take consumption negative to regulate to 0
-		setpointSet.Set(ConsumptionPositive(controllerOut))
+		invertCurrentPower, haveMeasurement := inverterPower.Get()
+		if !haveMeasurement {
+			invertCurrentPower = 0
+		}
 
-		log.Info().
-			Str("meter", m.String()).
-			Float64("pid-control-out", controllerOut).
-			Msg("control loop")
+		// add current inverter power as feedback onto measurement to reduce oscillation
+		controllerInputM := m.ConsumptionNegative() + *flagOffset
+		if setpointSet.valid {
+			diff := 0.6 * (setpointSet.value.ConsumptionPositive() + invertCurrentPower.ConsumptionPositive())
+			controllerInputM += diff
+			metricControlInputDiff.With().Set(diff)
+		} else {
+			metricControlInputDiff.With().Reset(openmetrics.GaugeOptions{})
+		}
+
+		metricControlInput.With().Set(controllerInputM)
+		controllerOut := pidC.Update(controllerInputM) // Take consumption negative to regulate to 0
+		// round to 5 watt steps
+		controllerOut = math.Round(controllerOut/5) * 5
+		// don't do anything around +/- 10 around the control point (set ESS to 0)
+		if controllerOut > -1*(*flagZeroPointWindow) && controllerOut < *flagZeroPointWindow {
+			controllerOut = 0
+		}
+		setpointSet.Set(ConsumptionPositive(controllerOut))
+		metricControlSetpoint.With().Set(controllerOut)
+
+		if v, _ := setpointSet.Get(); v.ConsumptionNegative() >= float64(*flagMaxWattCharge)/2.0 {
+			timeLastInverterProduction = time.Now()
+			pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverterPeak)
+		} else if time.Since(timeLastInverterProduction) > inverterPeakMaximumTimeWindow {
+			pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
+		}
+
+		min, max := pidC.OutputLimits()
+		metricControlPIDMin.With().Set(min)
+		metricControlPIDMax.With().Set(max)
 	}
 
 	childCtxCancel() // signal go-routines to exit
@@ -173,7 +314,7 @@ controlLoop:
 	wg.Wait()
 
 	log.Info().Msg("reset ESS to 0")
-	err := mk2.CommandWriteRAMVarData(context.Background(), victron.RamIDAssistent129, 0)
+	err := mk2.CommandWriteRAMVarDataSigned(context.Background(), veBus.RamIDAssistent129, 0)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to write to RAM 129")
 	}

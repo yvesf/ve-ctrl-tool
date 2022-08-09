@@ -29,4 +29,26 @@ Run the `help` command to get a list of commands.
 go run . ess-shelly http://10.1....shelly-address
 ```
 
-There is currently a hardcoded offset `testOffset` in commandEss.go
+## Monitoring
+
+```shell
+$ watch -n 0.1 bash -c '"curl -s localhost:18001/metrics | grep -v -E '^#' | sort"'
+```
+
+![](README.grafana.png)
+
+## NixOS flake
+
+Running
+```shell
+nix run . -- -help
+```
+
+Configure NixOS Module:
+```nix
+{
+  # ...
+  services.ess-shelly.enable = true;
+  services.ess-shelly.shellyUrl = "http://ip-address";
+}
+```

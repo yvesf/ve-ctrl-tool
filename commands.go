@@ -13,12 +13,13 @@ import (
 
 	"ve-ctrl-tool/backoff"
 	"ve-ctrl-tool/victron"
+	"ve-ctrl-tool/victron/veBus"
 )
 
 type c struct {
 	command string
 	args    int
-	fun     func(ctx context.Context, mk2 Mk2, args ...string) error
+	fun     func(ctx context.Context, mk2 *victron.Mk2, args ...string) error
 	help    string
 }
 
@@ -29,18 +30,19 @@ func init() {
 		command: "help",
 		args:    0,
 		help:    "help display this help",
-		fun:     func(context.Context, Mk2, ...string) error { help(); return nil },
+		fun:     func(context.Context, *victron.Mk2, ...string) error { help(); return nil },
 	},
 		{
 			command: "state",
 			args:    0,
 			help:    "state (CommandGetSetDeviceState)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				state, subState, err := mk2.CommandGetSetDeviceState(ctx, DeviceStateRequestStateInquiry)
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
+				state, subState, err := mk2.CommandGetSetDeviceState(ctx, victron.DeviceStateRequestStateInquiry)
 				if err != nil {
 					return fmt.Errorf("state command failed: %w", err)
 				}
 				println("device state", state, subState)
+
 				return nil
 			},
 		},
@@ -48,9 +50,8 @@ func init() {
 			command: "reset",
 			args:    0,
 			help:    "reset requests sends \"R\" to request a device reset",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				f := transportFrame{data: []byte{0x02, 0xff, 'R'}}
-				mk2.Write(f)
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
+				_, _ = veBus.CommandR.Frame().WriteAndRead(ctx, mk2)
 				time.Sleep(time.Second * 1)
 				println("reset finished")
 				return nil
@@ -60,7 +61,7 @@ func init() {
 			command: "set-state",
 			args:    1,
 			help:    "set-state 0|1|2|3 (CommandGetSetDeviceState)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				if len(args) != 1 {
 					return fmt.Errorf("wrong number of args")
 				}
@@ -68,7 +69,7 @@ func init() {
 				if err != nil {
 					return fmt.Errorf("invalid argument format")
 				}
-				mainState, subState, err := mk2.CommandGetSetDeviceState(ctx, DeviceStateRequestState(setState))
+				mainState, subState, err := mk2.CommandGetSetDeviceState(ctx, victron.DeviceStateRequestState(setState))
 				if err != nil {
 					return fmt.Errorf("command set-state failed: %w", err)
 				}
@@ -80,7 +81,7 @@ func init() {
 			command: "read-setting",
 			args:    2,
 			help:    "read-setting <low-byte> <high-byte> (CommandReadSetting)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				if len(args) != 2 {
 					return fmt.Errorf("wrong number of args")
 				}
@@ -104,7 +105,7 @@ func init() {
 			command: "read-ram",
 			args:    1,
 			help:    "read-ram <ramid-byte (comma sep)> (CommandReadRAMVar)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				if len(args) != 1 {
 					return fmt.Errorf("wrong no of args")
 				}
@@ -120,32 +121,32 @@ func init() {
 					ramIds = append(ramIds, 0)
 				}
 
-				value0, value1, err := mk2.CommandReadRAMVar(ctx, ramIds[0], ramIds[1])
+				value0, value1, err := mk2.CommandReadRAMVarUnsigned16(ctx, ramIds[0], ramIds[1])
 				if err != nil {
 					return fmt.Errorf("read-ram command failed: %w", err)
 				}
-				fmt.Printf("value0=%d value0(signed)=%d value0=0b%b value0=0x%x\n", value0, int16(value0), value0, value0)
-				fmt.Printf("value1=%d value1(signed)=%d value1=0b%b value1=0x%x\n", value1, int16(value1), value1, value1)
+				fmt.Printf("value0=%d value0(signed)=%d value0=0b%b value0=0x%x\n", value0, veBus.ParseSigned16(value0), value0, value0)
+				fmt.Printf("value1=%d value1(signed)=%d value1=0b%b value1=0x%x\n", value1, veBus.ParseSigned16(value1), value1, value1)
 				return nil
 			},
 		},
 		{
-			command: "write-ram",
-			args:    3,
-			help:    "write-ram <ram-id> <uint16-value) (CommandWriteRAMVarData)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				if len(args) != 3 {
+			command: "write-ram-signed",
+			args:    2,
+			help:    "write-ram-signed <ram-id> <int16-value) (CommandWriteRAMVarData)",
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
+				if len(args) != 2 {
 					return fmt.Errorf("wrong number of args")
 				}
-				ramID, err := strconv.Atoi(args[0])
+				ramID, err := strconv.ParseUint(args[0], 10, 16)
 				if err != nil {
 					return fmt.Errorf("parse ram-id failed: %w", err)
 				}
-				value, err := strconv.Atoi(args[1])
+				value, err := strconv.ParseInt(args[1], 10, 16)
 				if err != nil {
 					return fmt.Errorf("parse value failed: %w", err)
 				}
-				err = mk2.CommandWriteRAMVarData(ctx, uint16(ramID), int16(value))
+				err = mk2.CommandWriteRAMVarDataSigned(ctx, uint16(ramID), int16(value))
 				if err != nil {
 					return fmt.Errorf("write-ram failed: %w", err)
 				}
@@ -156,7 +157,7 @@ func init() {
 			command: `write-ram-id`,
 			args:    3,
 			help:    "write-ram-id <ram-id> <low-byte> <high-byte> (CommandWriteViaID)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				if len(args) != 3 {
 					return fmt.Errorf("wrong number of args")
 				}
@@ -183,7 +184,7 @@ func init() {
 			command: "write-setting",
 			args:    3,
 			help:    "write-setting <setting-id-uint16> <low-byte> <high-byte> (CommandWriteSettingData)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				if len(args) != 3 {
 					return fmt.Errorf("wrong number of args")
 				}
@@ -210,20 +211,20 @@ func init() {
 			command: "voltage",
 			args:    0,
 			help:    "voltage shows voltage information from ram",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
-				UInverterRMS, IInverterRMS, err := mk2.CommandReadRAMVar(ctx, victron.RamIDUInverterRMS, victron.RamIDIINverterRMS)
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
+				uBat, iBat, err := mk2.CommandReadRAMVarUnsigned16(ctx, veBus.RamIDUBat, veBus.RamIDIBat)
 				if err != nil {
 					return fmt.Errorf("voltage access UInverterRMS failed: %w", err)
 				}
-				fmt.Printf("UInverterRMS=%d UInverterRMS=0x%x UInverterRMS=0b%b\n", UInverterRMS, UInverterRMS, UInverterRMS)
-				fmt.Printf("IInverterRMS=%d IInverterRMS=0x%x IInverterRMS=0b%b\n", IInverterRMS, IInverterRMS, IInverterRMS)
+				fmt.Printf("UBat: %.2f Volt\n", float32(uBat)/100)
+				fmt.Printf("IBat: %d\n", iBat)
 
-				InverterPower14, OutputPower, err := mk2.CommandReadRAMVar(ctx, victron.RamIDInverterPower1, victron.RamIDOutputPower)
+				InverterPower14, OutputPower, err := mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDInverterPower1, veBus.RamIDOutputPower)
 				if err != nil {
 					return fmt.Errorf("voltage access InverterPower14 failed: %w", err)
 				}
-				fmt.Printf("InverterPower14=%d InverterPower14=0x%x InverterPower14=0b%b\n", InverterPower14, InverterPower14, InverterPower14)
-				fmt.Printf("OutputPower=%d OutputPower=0x%x OutputPower=0b%b\n", OutputPower, OutputPower, OutputPower)
+				fmt.Printf("InverterPower14: %d\n", InverterPower14)
+				fmt.Printf("OutputPower: %d Watt\n", OutputPower)
 
 				return nil
 			},
@@ -232,7 +233,7 @@ func init() {
 			command: "set-address",
 			args:    1,
 			help:    "set-address selects the address (\"A\" command, default 0)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				addr, err := strconv.Atoi(args[0])
 				if err != nil {
 					return fmt.Errorf("parse addr failed: %w", err)
@@ -248,7 +249,7 @@ func init() {
 			command: "get-address",
 			args:    0,
 			help:    "address gets the current address (\"A\" command)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				addr, err := mk2.GetAddress(ctx)
 				if err != nil {
 					return fmt.Errorf("address failed: %w", err)
@@ -261,7 +262,7 @@ func init() {
 			command: "ess-static",
 			args:    1,
 			help:    "ess-static <arg> (run loop sending signed value to ram 129)",
-			fun: func(ctx context.Context, mk2 Mk2, args ...string) error {
+			fun: func(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
 				b := backoff.NewExponentialBackoff(time.Second, time.Second*25)
 
 				setpointWatt, err := strconv.Atoi(args[0])
@@ -280,7 +281,7 @@ func init() {
 
 				var errors = 0
 				for childCtx.Err() == nil {
-					err := mk2.CommandWriteRAMVarData(ctx, 129, int16(setpointWatt))
+					err := mk2.CommandWriteRAMVarDataSigned(ctx, 129, int16(setpointWatt))
 					if err != nil {
 						return err
 					}
@@ -289,13 +290,14 @@ func init() {
 					case <-time.After(time.Millisecond * 500):
 					}
 
-					var UInverterRMS, IInverterRMS, InverterPower14, OutputPower uint16
-					UInverterRMS, IInverterRMS, err = mk2.CommandReadRAMVar(ctx, victron.RamIDUInverterRMS, victron.RamIDIINverterRMS)
+					var UInverterRMS, IInverterRMS uint16
+					var InverterPower14, OutputPower int16
+					UInverterRMS, IInverterRMS, err = mk2.CommandReadRAMVarUnsigned16(ctx, veBus.RamIDUInverterRMS, veBus.RamIDIINverterRMS)
 					if err != nil {
 						log.Error().Msgf("voltage access UInverterRMS failed: %v", err)
 						goto error
 					}
-					InverterPower14, OutputPower, err = mk2.CommandReadRAMVar(ctx, victron.RamIDInverterPower1, victron.RamIDOutputPower)
+					InverterPower14, OutputPower, err = mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDInverterPower1, veBus.RamIDOutputPower)
 					if err != nil {
 						log.Error().Msgf("voltage access InverterPower14 failed: %v", err)
 						goto error
@@ -322,7 +324,7 @@ func init() {
 				}
 
 				log.Info().Msg("reset ESS to 0")
-				err = mk2.CommandWriteRAMVarData(context.Background(), victron.RamIDAssistent129, 0)
+				err = mk2.CommandWriteRAMVarDataSigned(context.Background(), veBus.RamIDAssistent129, 0)
 				if err != nil {
 					log.Error().Err(err).Msg("failed to write to RAM 129")
 				}

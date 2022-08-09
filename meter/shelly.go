@@ -44,8 +44,11 @@ type Shelly3EMData struct {
 		TimerRemaining int    `json:"timer_remaining"`
 		TimerStarted   int    `json:"timer_started"`
 	} `json:"relays"`
-	Serial     int     `json:"serial"`
-	Time       string  `json:"time"`
+	Serial int    `json:"serial"`
+	Time   string `json:"time"`
+	// TotalPower is signed integer that reflects the total consumption of the measurement point.
+	// Positive values is power taken from the grid/uplink.
+	// Negative values is power injected to the grid/uplink.
 	TotalPower float64 `json:"total_power"`
 	Unixtime   int     `json:"unixtime"`
 	Update     struct {
@@ -63,6 +66,7 @@ type Shelly3EMData struct {
 	} `json:"wifi_sta"`
 }
 
+// Read returns the whole Shelly3EMData status update from the Shelly 3EM
 func (s Shelly3EM) Read() (*Shelly3EMData, error) {
 	resp, err := http.Get(s.url + `/status`)
 	if err != nil {
@@ -80,15 +84,4 @@ func (s Shelly3EM) Read() (*Shelly3EMData, error) {
 	}
 
 	return data, nil
-}
-
-// ReadTotalPower returns a signed integer that reflects the total consumption of the measurement point.
-// Positive values is power taken from the grid/uplink.
-// Negative values is power injected to the grid/uplink.
-func (s Shelly3EM) ReadTotalPower() (float64, error) {
-	d, err := s.Read()
-	if err != nil {
-		return 0.0, err
-	}
-	return d.TotalPower, nil
 }

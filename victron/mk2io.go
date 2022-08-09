@@ -1,72 +1,95 @@
-package main
+package victron
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/goburrow/serial"
 	"github.com/rs/zerolog/log"
+
+	"ve-ctrl-tool/victron/veBus"
 )
 
-type transportFrame struct {
-	data []byte
-}
-
 type mk2IO struct {
-	listenerProduce chan chan *transportFrame
-	listenerClose   chan chan *transportFrame
+	listenerProduce chan chan []byte
+	listenerClose   chan chan []byte
 
-	input        io.ReadWriter
+	input        serial.Port
 	commandMutex sync.Mutex
 	running      chan struct{}
 	wg           sync.WaitGroup
+	config       serial.Config
 }
 
-func NewReader(port serial.Port) *mk2IO {
+func NewReader(address string) (*mk2IO, error) {
+	config := serial.Config{}
+	config.Address = address
+	config.BaudRate = 2400
+	config.DataBits = 8
+	config.Parity = "N"
+	config.StopBits = 1
+	config.Timeout = 5 * time.Second
+
+	port, err := serial.Open(&config)
+	if err != nil {
+		return nil, err
+	}
+
 	return &mk2IO{
-		listenerProduce: make(chan chan *transportFrame),
-		listenerClose:   make(chan chan *transportFrame),
+		config:          config,
+		listenerProduce: make(chan chan []byte),
+		listenerClose:   make(chan chan []byte),
 		input:           port,
 		commandMutex:    sync.Mutex{},
 		running:         make(chan struct{}),
-	}
+	}, nil
 }
 
-// WriteAndReadFrame write a command and return the response
-// StartReader must have been called once before
-func (r *mk2IO) WriteAndReadFrame(ctx context.Context, command byte, data ...byte) (*transportFrame, error) {
+func (r *mk2IO) SetBaudHigh() error {
 	r.commandMutex.Lock()
 	defer r.commandMutex.Unlock()
-	length := byte(1 + 1 + len(data))
+	r.config.BaudRate = 115200
+	return r.input.Open(&r.config)
+}
+
+func (r *mk2IO) SetBaudLow() error {
+	r.commandMutex.Lock()
+	defer r.commandMutex.Unlock()
+	r.config.BaudRate = 2400
+	return r.input.Open(&r.config)
+}
+
+// ReadAndWrite write a command and return the response
+// StartReader must have been called once before
+func (r *mk2IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte) bool) ([]byte, error) {
+	r.commandMutex.Lock()
+	defer r.commandMutex.Unlock()
 
 	var done = make(chan struct{})
 	defer close(done)
 
-	var response = make(chan *transportFrame)
+	var response = make(chan []byte)
 	go func() {
 		var l = r.newListenChannel()
 		defer close(response)
 		defer r.Close(l)
 
-		var message []byte
-		message = append(message, length, 0xff, command)
-		message = append(message, data...)
-		r.Write(transportFrame{data: message})
+		r.Write(data)
 		for {
 			select {
 			case frame := <-l:
-				if frame.data[2] == command {
+				if receiver(frame) {
 					select {
 					case response <- frame:
 					case <-done:
 					}
 					return
+				} else {
+					log.Trace().Hex("frame.data", frame).Msg("dropping while waiting for response")
 				}
 			case <-done: // timeout
 				return
@@ -86,15 +109,15 @@ func (r *mk2IO) WriteAndReadFrame(ctx context.Context, command byte, data ...byt
 
 // StartReader runs the go-routines that read from the port in the background
 func (r *mk2IO) StartReader(ctx context.Context) error {
-	var listeners []chan *transportFrame
-	var frames = make(chan *transportFrame)
+	var listeners []chan []byte
+	var frames = make(chan []byte)
 	var wait = make(chan struct{})
 	var waitOnce = sync.Once{}
 
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		var l = make(chan *transportFrame)
+		var l = make(chan []byte)
 		for {
 			select {
 			case <-ctx.Done():
@@ -102,7 +125,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 				return
 			case r.listenerProduce <- l:
 				listeners = append(listeners, l)
-				l = make(chan *transportFrame)
+				l = make(chan []byte)
 			case unregL := <-r.listenerClose:
 				for i := range listeners {
 					if listeners[i] == unregL {
@@ -112,18 +135,17 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 					}
 				}
 			case f := <-frames:
-				for _, l := range listeners {
-					select {
-					case l <- f:
-					case <-time.After(time.Millisecond * 100):
-						log.Warn().Msg("timeout signalling listener")
-					}
-				}
-
-				if len(f.data) == 8 && f.data[2] == 'V' {
-					log.Trace().Msgf("received broadcast frame 'V': %v", hexArray(f.data[2:]))
+				if len(f) == 8 && f[2] == 'V' {
+					log.Trace().Hex("data", f[2:]).Msgf("received broadcast frame 'V'")
 				} else {
-					log.Debug().Msgf("received frame: %v", hexArray(f.data))
+					log.Debug().Hex("data", f).Msg("received frame")
+					for _, l := range listeners {
+						select {
+						case l <- f:
+						case <-time.After(time.Millisecond * 100):
+							log.Warn().Msg("timeout signalling listener")
+						}
+					}
 				}
 			}
 		}
@@ -142,13 +164,13 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 		for ctx.Err() == nil {
 			n, err := r.input.Read(frameBuf)
 			if err != nil {
-				log.Printf("Error reading: %v", err)
+				log.Warn().Msgf("Error reading: %v", err)
 				continue
 			}
 			if n == 0 {
 				continue
 			}
-			log.Trace().Msgf("Read: %v", hexArray(frameBuf[0:n]))
+			log.Trace().Hex("data", frameBuf[0:n]).Msgf("Read %v bytes", n)
 			_, _ = scannerBuffer.Write(frameBuf[0:n])
 
 			if scannerBuffer.Len() == 0 {
@@ -163,11 +185,12 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 				} else if length := scannerBuffer.Bytes()[0]; scannerBuffer.Len() < int(length) {
 					_, _ = scannerBuffer.ReadByte()
 					continue
-				} else if checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
+				} else if veBus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
 					log.Debug().Msg("synchronized")
 					synchronized = true
 					// to wait for sync  before returning from StartReader
 					waitOnce.Do(func() { close(wait) })
+
 					break
 				} else {
 					_, _ = scannerBuffer.ReadByte()
@@ -185,7 +208,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 
 			length := scannerBuffer.Bytes()[0]
 			if scannerBuffer.Bytes()[1] != 0xff {
-				log.Printf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1])
+				log.Warn().Msgf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1])
 				synchronized = false
 				scannerBuffer.Reset()
 				continue
@@ -196,15 +219,15 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 			}
 
 			potentialFrame := scannerBuffer.Bytes()[0 : length+2]
-			if cksum := checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
-				log.Printf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync", cksum, potentialFrame[length+1])
+			if cksum := veBus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
+				log.Warn().Msgf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync", cksum, potentialFrame[length+1])
 				synchronized = false
 				scannerBuffer.Reset()
 				continue
 			}
 
 			fullFrame := scannerBuffer.Next(int(length) + 2) // drop successful read data
-			f := &transportFrame{data: fullFrame[:length+1]}
+			f := fullFrame[:length+1]
 
 			select {
 			case <-ctx.Done():
@@ -226,16 +249,15 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 }
 
 // Write calculates the checksum and writes the frame to the port
-func (r *mk2IO) Write(f transportFrame) {
-	data := append(f.data[:], checksum(f.data))
+func (r *mk2IO) Write(data []byte) {
 	n, err := r.input.Write(data)
 	if err != nil {
 		panic(err) // todo
 	}
-	log.Debug().Msgf("sent %v bytes: %v ", n, hexArray(data))
+	log.Debug().Hex("data", data).Msgf("sent %v bytes ", n)
 }
 
-func (r *mk2IO) Close(l chan *transportFrame) {
+func (r *mk2IO) Close(l chan []byte) {
 	for {
 		select {
 		case r.listenerClose <- l:
@@ -251,27 +273,37 @@ func (r *mk2IO) Wait() {
 	r.wg.Wait()
 }
 
-func (r *mk2IO) newListenChannel() chan *transportFrame {
+func (r *mk2IO) newListenChannel() chan []byte {
 	return <-r.listenerProduce
 }
 
-// checksum implements the check-summing algorithm for ve.bus
-func checksum(data []byte) byte {
-	var sum = byte(0)
-	for _, d := range data {
-		sum += d
-	}
-	checksum := 255 - (sum % 255) + 1
-	return checksum
-}
+func (r *mk2IO) UpgradeHighSpeed() error {
+	time.Sleep(time.Millisecond * 100)
 
-// hexArray returns a byte-slice more readable as hex-formatted values string
-func hexArray(data []byte) string {
-	var buf = new(strings.Builder)
-	_, _ = fmt.Fprintf(buf, "[ ")
-	for _, c := range data {
-		_, _ = fmt.Fprintf(buf, "0x%02x ", c)
+	n, err := r.input.Write([]byte{0x02, 0xff, 0x4e, 0xb1})
+	if err != nil {
+		return fmt.Errorf("failed magic high-speed sequence: %w", err)
 	}
-	_, _ = fmt.Fprintf(buf, " ]")
-	return buf.String()
+	if n != 4 {
+		return fmt.Errorf("failed magic high-speed sequence: incomplete write")
+	}
+
+	time.Sleep(time.Millisecond * 50)
+
+	err = r.SetBaudHigh()
+	if err != nil {
+		return fmt.Errorf("failed to set high baud rate: %w", err)
+	}
+
+	n, err = r.input.Write([]byte("UUUUU"))
+	if err != nil {
+		return fmt.Errorf("failed write UUUUU: %w", err)
+	}
+	if n != 5 {
+		return fmt.Errorf("failed write UUUUU: incomplete write")
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	return nil
 }

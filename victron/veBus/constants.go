@@ -1,4 +1,4 @@
-package victron
+package veBus
 
 import "fmt"
 
@@ -27,34 +27,54 @@ const (
 	RamIDAssistent129              = 129
 )
 
-const (
-	CommandA = 'A'
-	CommandW = 'W'
-)
+type Command byte
+
+func (c Command) Frame(data ...byte) VeCommandFrame {
+	return VeCommandFrame{
+		command: c,
+		Data:    data,
+	}
+}
 
 const (
-	WCommandSendSoftwareVersionPart0 = 0x05
-	WCommandSendSoftwareVersionPart1 = 0x06
-	WCommandGetSetDeviceState        = 0x0e
-	WCommandReadRAMVar               = 0x30
-	WCommandReadSetting              = 0x31
-	WCommandWriteRAMVar              = 0x32
-	WCommandWriteSetting             = 0x33
-	WCommandWriteData                = 0x34
-	WCommandWriteViaID               = 0x37
+	CommandA Command = 'A'
+	CommandW Command = 'W'
+	CommandR Command = 'R'
+)
+
+type WCommand byte
+
+func (c WCommand) Frame(data ...byte) VeWFrame {
+	return VeWFrame{
+		Command: c,
+		Data:    data,
+	}
+}
+
+const (
+	WCommandSendSoftwareVersionPart0 WCommand = 0x05
+	WCommandSendSoftwareVersionPart1 WCommand = 0x06
+	WCommandGetSetDeviceState        WCommand = 0x0e
+	WCommandReadRAMVar               WCommand = 0x30
+	WCommandReadSetting              WCommand = 0x31
+	WCommandWriteRAMVar              WCommand = 0x32
+	WCommandWriteSetting             WCommand = 0x33
+	WCommandWriteData                WCommand = 0x34
+	WCommandWriteViaID               WCommand = 0x37
 )
 
 type WReply uint8
 
 const (
-	WReplyCommandNotSupported   = 0x80
-	WReplyReadRAMOK             = 0x85
-	WReplyReadSettingOK         = 0x86
-	WReplySuccesfulRAMWrite     = 0x87
-	WReplySuccesfulSettingWrite = 0x88
-	WReplyVariableNotSupported  = 0x90
-	WReplySettingNotSupported   = 0x91
-	WReplyAccessLevelRequired   = 0x9b
+	WReplyCommandNotSupported        = 0x80
+	WReplyReadRAMOK                  = 0x85
+	WReplyReadSettingOK              = 0x86
+	WReplySuccesfulRAMWrite          = 0x87
+	WReplySuccesfulSettingWrite      = 0x88
+	WReplyVariableNotSupported       = 0x90
+	WReplySettingNotSupported        = 0x91
+	WReplyCommandGetSetDeviceStateOK = 0x94
+	WReplyAccessLevelRequired        = 0x9b
 )
 
 func (r WReply) String() string {
@@ -78,28 +98,4 @@ func (r WReply) String() string {
 	default:
 		return fmt.Sprintf("undefined reply 0x%02x", uint8(r))
 	}
-}
-
-type Signed16 struct{ High, Low byte }
-
-func (s Signed16) Int16() int16 {
-	val := (0x79&int16(s.High))<<8 | int16(s.Low)
-	if s.High > 0x80 {
-		return val * -1
-	}
-	return val
-}
-
-func MakeSigned16(in int16) Signed16 {
-	var val uint16
-	if in < 0 {
-		val = (0xffff - uint16(in*-1)) + 1
-	} else {
-		val = uint16(in)
-	}
-	return Signed16{High: byte(0xff & (val >> 8)), Low: byte(0xff & val)}
-}
-
-func ParseSigned16(in uint16) Signed16 {
-	return Signed16{High: byte(0xff & (in >> 8)), Low: byte(0xff & in)}
 }
