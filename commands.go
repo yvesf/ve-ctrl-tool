@@ -334,7 +334,6 @@ func init() {
 		},
 		{
 			command: "ess-shelly",
-			args:    1,
 			help:    "ess-shelly <url> (run ess with shelly as control input)",
 			fun:     CommandEssShelly,
 		},

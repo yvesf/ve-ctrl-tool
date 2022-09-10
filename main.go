@@ -170,7 +170,7 @@ func execute(ctx context.Context, mk2 *victron.Mk2, tokens []string) error {
 		if comm.command != tokens[0] {
 			continue
 		}
-		if comm.args != len(tokens)-1 {
+		if comm.args != 0 && comm.args != len(tokens)-1 {
 			return fmt.Errorf("invalid number of arguments for command %v, expected %v got %v",
 				comm.command, comm.args, len(tokens)-1)
 		}

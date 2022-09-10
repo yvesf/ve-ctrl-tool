@@ -210,7 +210,7 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 		}()
 
 		buf := NewRingbuf(5)
-		shelly := meter.NewShelly3EM(args[0])
+		shelly := meter.NewShelly3EM(flagset.Args()[0])
 		b := backoff.NewExponentialBackoff(shellyReadInterval, shellyReadInterval*50)
 		errCount := 0
 

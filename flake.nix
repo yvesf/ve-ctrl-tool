@@ -40,46 +40,63 @@
               default = "/dev/ttyUSB0";
               description = "MK3 device";
             };
-          };
-          config = lib.mkIf config.services.ess-shelly.enable {
-            systemd.services.ess-shelly = {
-              description = "the multiplus + shelly controller";
-              path = [ ve-ctrl-tool ];
-              wantedBy = [ "default.target" ];
-              script = ''
-                ve-ctrl-tool -metricsHTTP "${config.services.ess-shelly.metricsAddress}" ess-shelly "${config.services.ess-shelly.shellyUrl}"
-              '';
-              serviceConfig = {
-                LockPersonality = true;
-                CapabilityBoundingSet = "";
-                DeviceAllow = "${config.services.ess-shelly.serialDevice}";
-                DynamicUser = true;
-                Group = "dialout";
-                MemoryDenyWriteExecute = true;
-                NoNewPrivileges = true;
-                PrivateUsers = true;
-                ProtectClock = true;
-                ProtectControlGroups = true;
-                ProtectHome = true;
-                ProtectHostname = true;
-                ProtectKernelLogs = true;
-                ProtectKernelModules = true;
-                ProtectKernelTunables = true;
-                ProtectProc = true;
-                ProtectSystem = "strict";
-                RemoveIPC = true;
-                Restart = "always";
-                RestrictAddressFamilies = "AF_INET AF_INET6";
-                RestrictNamespaces = true;
-                RestrictRealtime = true;
-                RestrictSUIDSGID = true;
-                SystemCallArchitectures = "native";
-                SystemCallErrorNumber = "EPERM";
-                SystemCallFilter = [ "@system-service" ];
-                UMask = "0007";
-              };
+            maxCharge = lib.mkOption {
+              type = lib.types.nullOr lib.types.int;
+              default = null;
+            };
+            maxInverter = lib.mkOption {
+              type = lib.types.nullOr lib.types.int;
+              default = null;
+            };
+            maxInverterPeak = lib.mkOption {
+              type = lib.types.nullOr lib.types.int;
+              default = null;
             };
           };
+          config = let cfg = config.services.ess-shelly; in
+            lib.mkIf cfg.enable {
+              systemd.services.ess-shelly = {
+                description = "the multiplus + shelly controller";
+                path = [ ve-ctrl-tool ];
+                wantedBy = [ "default.target" ];
+                script = ''
+                  ve-ctrl-tool -metricsHTTP "${cfg.metricsAddress}" ess-shelly \
+                    ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
+                    ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
+                    ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
+                    "${cfg.shellyUrl}"
+                '';
+                serviceConfig = {
+                  LockPersonality = true;
+                  CapabilityBoundingSet = "";
+                  DeviceAllow = "${cfg.serialDevice}";
+                  DynamicUser = true;
+                  Group = "dialout";
+                  MemoryDenyWriteExecute = true;
+                  NoNewPrivileges = true;
+                  PrivateUsers = true;
+                  ProtectClock = true;
+                  ProtectControlGroups = true;
+                  ProtectHome = true;
+                  ProtectHostname = true;
+                  ProtectKernelLogs = true;
+                  ProtectKernelModules = true;
+                  ProtectKernelTunables = true;
+                  ProtectProc = true;
+                  ProtectSystem = "strict";
+                  RemoveIPC = true;
+                  Restart = "always";
+                  RestrictAddressFamilies = "AF_INET AF_INET6";
+                  RestrictNamespaces = true;
+                  RestrictRealtime = true;
+                  RestrictSUIDSGID = true;
+                  SystemCallArchitectures = "native";
+                  SystemCallErrorNumber = "EPERM";
+                  SystemCallFilter = [ "@system-service" ];
+                  UMask = "0007";
+                };
+              };
+            };
         };
     };
 }
