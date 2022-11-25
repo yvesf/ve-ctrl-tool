@@ -1,4 +1,4 @@
-package victron
+package mk2
 
 import (
 	"bytes"
@@ -11,21 +11,23 @@ import (
 	"github.com/goburrow/serial"
 	"github.com/rs/zerolog/log"
 
-	"ve-ctrl-tool/victron/veBus"
+	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
-type mk2IO struct {
+// IO provides raw read/write to MK2-Adapter.
+type IO struct {
 	listenerProduce chan chan []byte
 	listenerClose   chan chan []byte
 
-	input        serial.Port
-	commandMutex sync.Mutex
-	running      chan struct{}
-	wg           sync.WaitGroup
-	config       serial.Config
+	input          serial.Port
+	commandMutex   sync.Mutex
+	signalShutdown chan struct{}
+	running        bool
+	wg             sync.WaitGroup
+	config         serial.Config
 }
 
-func NewReader(address string) (*mk2IO, error) {
+func NewReader(address string) (*IO, error) {
 	config := serial.Config{}
 	config.Address = address
 	config.BaudRate = 2400
@@ -39,24 +41,23 @@ func NewReader(address string) (*mk2IO, error) {
 		return nil, err
 	}
 
-	return &mk2IO{
+	return &IO{
 		config:          config,
 		listenerProduce: make(chan chan []byte),
 		listenerClose:   make(chan chan []byte),
 		input:           port,
 		commandMutex:    sync.Mutex{},
-		running:         make(chan struct{}),
 	}, nil
 }
 
-func (r *mk2IO) SetBaudHigh() error {
+func (r *IO) SetBaudHigh() error {
 	r.commandMutex.Lock()
 	defer r.commandMutex.Unlock()
 	r.config.BaudRate = 115200
 	return r.input.Open(&r.config)
 }
 
-func (r *mk2IO) SetBaudLow() error {
+func (r *IO) SetBaudLow() error {
 	r.commandMutex.Lock()
 	defer r.commandMutex.Unlock()
 	r.config.BaudRate = 2400
@@ -64,17 +65,17 @@ func (r *mk2IO) SetBaudLow() error {
 }
 
 // ReadAndWrite write a command and return the response
-// StartReader must have been called once before
-func (r *mk2IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte) bool) ([]byte, error) {
+// StartReader must have been called once before.
+func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte) bool) ([]byte, error) {
 	r.commandMutex.Lock()
 	defer r.commandMutex.Unlock()
 
-	var done = make(chan struct{})
+	done := make(chan struct{})
 	defer close(done)
 
-	var response = make(chan []byte)
+	response := make(chan []byte)
 	go func() {
-		var l = r.newListenChannel()
+		l := r.newListenChannel()
 		defer close(response)
 		defer r.Close(l)
 
@@ -88,9 +89,8 @@ func (r *mk2IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]b
 					case <-done:
 					}
 					return
-				} else {
-					log.Trace().Hex("frame.data", frame).Msg("dropping while waiting for response")
 				}
+				log.Trace().Hex("frame.data", frame).Msg("dropping while waiting for response")
 			case <-done: // timeout
 				return
 			}
@@ -107,20 +107,29 @@ func (r *mk2IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]b
 	}
 }
 
-// StartReader runs the go-routines that read from the port in the background
-func (r *mk2IO) StartReader(ctx context.Context) error {
+// StartReader runs the go-routines that read from the port in the background.
+func (r *IO) StartReader() error {
 	var listeners []chan []byte
-	var frames = make(chan []byte)
-	var wait = make(chan struct{})
-	var waitOnce = sync.Once{}
+	frames := make(chan []byte)
+	wait := make(chan struct{})
+	waitOnce := sync.Once{}
+
+	r.commandMutex.Lock()
+	if r.running {
+		r.commandMutex.Unlock()
+		return fmt.Errorf("already running")
+	}
+	r.signalShutdown = make(chan struct{})
+	r.running = true
+	r.commandMutex.Unlock()
 
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		var l = make(chan []byte)
+		l := make(chan []byte)
 		for {
 			select {
-			case <-ctx.Done():
+			case <-r.signalShutdown:
 				close(l)
 				return
 			case r.listenerProduce <- l:
@@ -152,16 +161,15 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 	}()
 
 	r.wg.Add(1)
-	ctx, cancel := context.WithCancel(ctx)
 	go func() {
-		defer cancel()
+		defer r.Shutdown()
 		defer r.wg.Done()
 		defer close(frames)
 
-		var synchronized = false
-		var frameBuf = make([]byte, 1024)
 		var scannerBuffer bytes.Buffer
-		for ctx.Err() == nil {
+		synchronized := false
+		frameBuf := make([]byte, 1024)
+		for r.running {
 			n, err := r.input.Read(frameBuf)
 			if err != nil {
 				log.Warn().Msgf("Error reading: %v", err)
@@ -173,20 +181,25 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 			log.Trace().Hex("data", frameBuf[0:n]).Msgf("Read %v bytes", n)
 			_, _ = scannerBuffer.Write(frameBuf[0:n])
 
+			log.Trace().Hex("scannerBuf", scannerBuffer.Bytes()).Msg("buffer")
+
 			if scannerBuffer.Len() == 0 {
 				continue
 			}
+			for scannerBuffer.Len() > 0 && scannerBuffer.Bytes()[0] == 0x00 {
+				// drop 0x00
+				_ = scannerBuffer.Next(1)
+			}
 
-			// wait for at least 7 bytes in buffer before trying to sync
+			// wait for at least 9 bytes in buffer before trying to sync
 			for !synchronized && scannerBuffer.Len() >= 9 {
+				log.Debug().Bool("synchronized", synchronized).Msg("re-syncing")
 				if scannerBuffer.Bytes()[1] != 0xff {
 					_, _ = scannerBuffer.ReadByte()
-					continue
 				} else if length := scannerBuffer.Bytes()[0]; scannerBuffer.Len() < int(length) {
 					_, _ = scannerBuffer.ReadByte()
-					continue
-				} else if veBus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
-					log.Debug().Msg("synchronized")
+				} else if vebus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
+					log.Debug().Hex("checksum", scannerBuffer.Bytes()).Msg("synchronized")
 					synchronized = true
 					// to wait for sync  before returning from StartReader
 					waitOnce.Do(func() { close(wait) })
@@ -194,14 +207,11 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 					break
 				} else {
 					_, _ = scannerBuffer.ReadByte()
-					continue
 				}
-
 			}
 			if !synchronized {
 				continue
 			}
-
 			if scannerBuffer.Len() < 3 {
 				continue
 			}
@@ -219,7 +229,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 			}
 
 			potentialFrame := scannerBuffer.Bytes()[0 : length+2]
-			if cksum := veBus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
+			if cksum := vebus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
 				log.Warn().Msgf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync", cksum, potentialFrame[length+1])
 				synchronized = false
 				scannerBuffer.Reset()
@@ -230,7 +240,7 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 			f := fullFrame[:length+1]
 
 			select {
-			case <-ctx.Done():
+			case <-r.signalShutdown:
 			case frames <- f:
 			}
 		}
@@ -240,16 +250,16 @@ func (r *mk2IO) StartReader(ctx context.Context) error {
 	select {
 	case <-wait: // for first broadcast
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(time.Second * 50):
-		cancel()
+	case <-r.signalShutdown: // shutdown during init
+		return nil
+	case <-time.After(time.Second * 50): // timeout
+		r.Shutdown()
 		return errors.New("could not do initial sync")
 	}
 }
 
-// Write calculates the checksum and writes the frame to the port
-func (r *mk2IO) Write(data []byte) {
+// Write calculates the checksum and writes the frame to the port.
+func (r *IO) Write(data []byte) {
 	n, err := r.input.Write(data)
 	if err != nil {
 		panic(err) // todo
@@ -257,7 +267,7 @@ func (r *mk2IO) Write(data []byte) {
 	log.Debug().Hex("data", data).Msgf("sent %v bytes ", n)
 }
 
-func (r *mk2IO) Close(l chan []byte) {
+func (r *IO) Close(l chan []byte) {
 	for {
 		select {
 		case r.listenerClose <- l:
@@ -267,17 +277,30 @@ func (r *mk2IO) Close(l chan []byte) {
 	}
 }
 
-// Wait blocks until all reader go-routines finished
-// Shutdown is initiated by cancelling the context passed to StartReader
-func (r *mk2IO) Wait() {
+// Shutdown initiates stop reading.
+// Call Wait() to make sure shutdown is completed.
+func (r *IO) Shutdown() {
+	log.Debug().Msg("try shutdown")
+	r.commandMutex.Lock()
+	if r.running {
+		log.Debug().Msg("trigger shutdown")
+		close(r.signalShutdown)
+		r.running = false
+	}
+	r.commandMutex.Unlock()
+}
+
+// Wait blocks until all reader go-routines finished.
+// Shutdown is initiated by calling Shutdown().
+func (r *IO) Wait() {
 	r.wg.Wait()
 }
 
-func (r *mk2IO) newListenChannel() chan []byte {
+func (r *IO) newListenChannel() chan []byte {
 	return <-r.listenerProduce
 }
 
-func (r *mk2IO) UpgradeHighSpeed() error {
+func (r *IO) UpgradeHighSpeed() error {
 	time.Sleep(time.Millisecond * 100)
 
 	n, err := r.input.Write([]byte{0x02, 0xff, 0x4e, 0xb1})

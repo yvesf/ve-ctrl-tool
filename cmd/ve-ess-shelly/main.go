@@ -2,20 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
 	"sync"
 	"time"
 
+	"github.com/yvesf/ve-ctrl-tool/backoff"
+	"github.com/yvesf/ve-ctrl-tool/cmd"
+	"github.com/yvesf/ve-ctrl-tool/meter"
+	"github.com/yvesf/ve-ctrl-tool/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
+
 	"github.com/bsm/openmetrics"
+	"github.com/bsm/openmetrics/omhttp"
 	"github.com/felixge/pidctrl"
 	"github.com/rs/zerolog/log"
-
-	"ve-ctrl-tool/backoff"
-	"ve-ctrl-tool/meter"
-	"ve-ctrl-tool/victron"
-	"ve-ctrl-tool/victron/veBus"
 )
 
 var (
@@ -72,27 +79,52 @@ var (
 	})
 )
 
-func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) error {
-	const (
-		inverterPeakMaximumTimeWindow = time.Minute * 15 // in the last 15min.. for max 15min
-	)
-	var (
-		flagset             = flag.NewFlagSet("ess-shelly", flag.ContinueOnError)
-		flagMaxWattCharge   = flagset.Float64("maxCharge", 250.0, "Maximum ESS Setpoint for charging (negative setpoint)")
-		flagMaxWattInverter = flagset.Float64("maxInverter",
-			60.0,
-			"Maximum ESS Setpoint for inverter (positive setpoint)")
-		flagMaxWattInverterPeak = flagset.Float64("maxInverterPeak",
-			800,
-			"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
-		flagOffset          = flagset.Float64("offset", -10.0, "Power measurement offset")
-		flagZeroPointWindow = flagset.Float64("zeroWindow", 20, "Do not operate if measurement is in this +/- window")
-	)
+const (
+	inverterPeakMaximumTimeWindow = time.Minute * 15 // in the last 15min.. for max 15min
+)
 
-	if err := flagset.Parse(args); err == flag.ErrHelp {
-		return nil
-	} else if err != nil {
-		return err
+var (
+	flagMetricsHTTP     = flag.String("metricsHTTP", "", "Address of a http server serving metrics under /metrics")
+	flagMaxWattCharge   = flag.Float64("maxCharge", 250.0, "Maximum ESS Setpoint for charging (negative setpoint)")
+	flagMaxWattInverter = flag.Float64("maxInverter",
+		60.0,
+		"Maximum ESS Setpoint for inverter (positive setpoint)")
+	flagMaxWattInverterPeak = flag.Float64("maxInverterPeak",
+		800,
+		"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
+	flagOffset          = flag.Float64("offset", -10.0, "Power measurement offset")
+	flagZeroPointWindow = flag.Float64("zeroWindow", 20, "Do not operate if measurement is in this +/- window")
+)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	adapter := cmd.CommonInit(ctx)
+
+	// Metrics HTTP endpoint
+	if *flagMetricsHTTP != `` {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", omhttp.NewHandler(openmetrics.DefaultRegistry()))
+
+		var lc net.ListenConfig
+		ln, err := lc.Listen(ctx, "tcp", *flagMetricsHTTP)
+		if err != nil {
+			log.Panic().Err(err).Str("addr", *flagMetricsHTTP).Msg("Listen on http failed")
+		}
+
+		srv := &http.Server{Handler: mux}
+		go func() {
+			err := srv.Serve(ln)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error().Err(err).Msg("http server failed")
+			}
+		}()
+	}
+
+	mk2Ess, err := mk2.ESSInit(ctx, adapter)
+	if err != nil {
+		panic(err)
 	}
 
 	wg := sync.WaitGroup{}
@@ -141,10 +173,10 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 
 			if setpoint != setpointComitted || time.Since(lastUpdate) > time.Second*30 {
 				log.Debug().Int16("setpoint", setpoint).Msg("write setpoint to multiplus")
-				err := mk2.CommandWriteRAMVarDataSigned(ctx, veBus.RamIDAssistent129, setpoint)
+				err := mk2Ess.SetpointSet(ctx, setpoint)
 				if err != nil {
-					log.Error().Err(err).Msg("failed to write to RAM 129")
-					goto error
+					log.Error().Err(err).Msg("failed to write to ESS RAM")
+					goto handleError
 				}
 
 				setpointComitted = setpoint
@@ -154,15 +186,15 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
 			}
 
-			iBat, uBat, err = mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDIBat, veBus.RamIDUBat)
+			iBat, uBat, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to read IBat/UBat")
-				goto error
+				goto handleError
 			}
-			inverterPowerRAM, _, err = mk2.CommandReadRAMVarSigned16(ctx, veBus.RamIDInverterPower1, 0)
+			inverterPowerRAM, _, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to read InverterPower1")
-				goto error
+				goto handleError
 			}
 			log.Debug().Float32("IBat", float32(iBat)/10).
 				Float32("UBat", float32(uBat)/100).
@@ -176,7 +208,7 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 			errors = 0
 			continue
 
-		error:
+		handleError:
 			metricMultiplusInverterPower.With().Reset(openmetrics.GaugeOptions{})
 			metricMultiplusUBat.With().Reset(openmetrics.GaugeOptions{})
 			metricMultiplusIBat.With().Reset(openmetrics.GaugeOptions{})
@@ -200,7 +232,8 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 		const (
 			shellyReadInterval = time.Millisecond * 800
 		)
-		var t = time.NewTimer(0)
+
+		t := time.NewTimer(0)
 		defer t.Stop()
 		defer func() {
 			t.Stop()
@@ -209,8 +242,8 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 			wg.Done()
 		}()
 
-		buf := NewRingbuf(5)
-		shelly := meter.NewShelly3EM(flagset.Args()[0])
+		buf := newRingbuf(5)
+		shelly := meter.NewShelly3EM(flag.Args()[0])
 		b := backoff.NewExponentialBackoff(shellyReadInterval, shellyReadInterval*50)
 		errCount := 0
 
@@ -249,10 +282,9 @@ func CommandEssShelly(ctx context.Context, mk2 *victron.Mk2, args ...string) err
 		}
 	}()
 
-	var (
-		// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
-		timeLastInverterProduction time.Time
-	)
+	// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
+	var timeLastInverterProduction time.Time
+
 	pidC := pidctrl.NewPIDController(0.05, 0.15, 0.01)
 	pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
 
@@ -313,16 +345,15 @@ controlLoop:
 	log.Info().Msg("Wait for go-routines")
 	wg.Wait()
 
-	log.Info().Msg("reset ESS to 0")
-	err := mk2.CommandWriteRAMVarDataSigned(context.Background(), veBus.RamIDAssistent129, 0)
+	log.Info().Msg("reset ESS setpoint to 0")
+	err = mk2Ess.SetpointSet(context.Background(), 0)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to write to RAM 129")
+		log.Error().Err(err).Msg("failed to write to ESS Ram")
 	}
 
 	defer func() {
 		log.Info().Msg("ess-shelly finished")
 	}()
-	return nil
 }
 
 type ringbuf struct {
@@ -331,7 +362,7 @@ type ringbuf struct {
 	s   int
 }
 
-func NewRingbuf(size int) *ringbuf {
+func newRingbuf(size int) *ringbuf {
 	return &ringbuf{
 		s: size,
 	}

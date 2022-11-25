@@ -1,30 +1,35 @@
-package veBus
+package vebus
 
 import "fmt"
 
-// The following block defines RAM IDs according to "Interfacing with VE Bus products - MK2 Protocol 3 14.docx"
+// The following block defines RAM IDs according to "Interfacing with VE Bus products - MK2 Protocol 3 14.docx".
 const (
-	RamIDUMainsRMS                 = 0
-	RamIDIMainsRMS                 = 1
-	RamIDUInverterRMS              = 2
-	RamIDIINverterRMS              = 3
-	RamIDUBat                      = 4
-	RamIDIBat                      = 5
-	RamIDUBatRMS                   = 6 // RMS=value of ripple voltage
-	RamIDInverterPeriodTime        = 7 // time-base 0.1s
-	RamIDMainsPeriodTime           = 8 // time-base 0.1s
-	RamIDSignedACLoadCurrent       = 9
-	RamIDVirtualSwitchPosition     = 10
-	RamIDIgnoreACInputState        = 11
-	RamIDMultiFunctionalRelayState = 12
-	RamIDChargeState               = 13 // battery monitor function
-	RamIDInverterPower1            = 14 // filtered. 16bit signed integer. Positive AC->DC. Negative DC->AC.
-	RamIDInverterPower2            = 15 // ..
-	RamIDOutputPower               = 16 // AC Output. 16bit signed integer.
-	RamIDInverterPower1Unfiltered  = 17
-	RamIDInverterPower2Unfiltered  = 18
-	RamIDOutputPowerUnfiltered     = 19
-	RamIDAssistent129              = 129
+	RAMIDUMainsRMS                 = 0
+	RAMIDIMainsRMS                 = 1
+	RAMIDUInverterRMS              = 2
+	RAMIDIINverterRMS              = 3
+	RAMIDUBat                      = 4
+	RAMIDIBat                      = 5
+	RAMIDUBatRMS                   = 6 // RMS=value of ripple voltage
+	RAMIDInverterPeriodTime        = 7 // time-base 0.1s
+	RAMIDMainsPeriodTime           = 8 // time-base 0.1s
+	RAMIDSignedACLoadCurrent       = 9
+	RAMIDVirtualSwitchPosition     = 10
+	RAMIDIgnoreACInputState        = 11
+	RAMIDMultiFunctionalRelayState = 12
+	RAMIDChargeState               = 13 // battery monitor function
+	RAMIDInverterPower1            = 14 // filtered. 16bit signed integer. Positive AC->DC. Negative DC->AC.
+	RAMIDInverterPower2            = 15 // ..
+	RAMIDOutputPower               = 16 // AC Output. 16bit signed integer.
+	RAMIDInverterPower1Unfiltered  = 17
+	RAMIDInverterPower2Unfiltered  = 18
+	RAMIDOutputPowerUnfiltered     = 19
+)
+
+// The following block defines Assistent ID to identify to which
+// assistant RAM records belong to.
+const (
+	AssistantRAMIDESS = 5 // ESS Assistant
 )
 
 type Command byte

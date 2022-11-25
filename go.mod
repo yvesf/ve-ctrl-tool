@@ -1,4 +1,4 @@
-module ve-ctrl-tool
+module github.com/yvesf/ve-ctrl-tool
 
 go 1.18
 

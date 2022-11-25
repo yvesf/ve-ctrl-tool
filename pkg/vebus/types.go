@@ -1,8 +1,10 @@
-package veBus
+package vebus
 
-import "context"
+import (
+	"context"
+)
 
-// Signed16Bytes is nothing special but just literally implements the signed-integer encoding in ESS Mode 2 and 3
+// Signed16Bytes is nothing special but just literally implements the signed-integer encoding in ESS Mode 2 and 3.
 func Signed16Bytes(in int16) (uint8, uint8) {
 	var val uint16
 	if in < 0 {
@@ -13,7 +15,7 @@ func Signed16Bytes(in int16) (uint8, uint8) {
 	return uint8(0xff & val), uint8(0xff & (val >> 8))
 }
 
-// ParseSigned16 is nothing special but just literally implements the signed-integer encoding in ESS Mode 2 and 3
+// ParseSigned16 is nothing special but just literally implements the signed-integer encoding in ESS Mode 2 and 3.
 func ParseSigned16(in uint16) int16 {
 	if 0x8000&in == 0x8000 {
 		return -1 + int16(0x7fff & ^in)*-1
@@ -25,9 +27,9 @@ func ParseSigned16Bytes(low, high byte) int16 {
 	return ParseSigned16(uint16(low) | uint16(high)<<8)
 }
 
-// Checksum implements the check-summing algorithm for ve.bus
+// Checksum implements the check-summing algorithm for ve.bus.
 func Checksum(data []byte) byte {
-	var sum = byte(0)
+	sum := byte(0)
 	for _, d := range data {
 		sum += d
 	}

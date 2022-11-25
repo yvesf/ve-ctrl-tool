@@ -1,7 +1,6 @@
 {
-  inputs.nixpkgs.url = "nixpkgs/nixos-22.05";
+  inputs.nixpkgs.url = "nixpkgs/nixos-22.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
-  inputs.flake-utils.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = { self, nixpkgs, flake-utils }:
     let
@@ -17,13 +16,17 @@
         rec {
           packages = { ve-ctrl-tool = nixpkgs.legacyPackages.${system}.callPackage packageDef { }; };
           defaultPackage = packages.ve-ctrl-tool;
+          devShell =
+            with import nixpkgs { inherit system; }; mkShell {
+              packages = [ go nixpkgs-fmt golangci-lint ];
+            };
         }) // {
       nixosModule = { pkgs, config, lib, ... }:
         let
           ve-ctrl-tool = pkgs.callPackage packageDef { };
         in
         {
-          options.services.ess-shelly = {
+          options.services.ve-ess-shelly = {
             enable = lib.mkEnableOption "the multiplus + shelly controller";
             shellyUrl = lib.mkOption {
               type = lib.types.str;
@@ -53,14 +56,15 @@
               default = null;
             };
           };
-          config = let cfg = config.services.ess-shelly; in
+          config = let cfg = config.services.ve-ess-shelly; in
             lib.mkIf cfg.enable {
-              systemd.services.ess-shelly = {
+              systemd.services.ve-ess-shelly = {
                 description = "the multiplus + shelly controller";
                 path = [ ve-ctrl-tool ];
                 wantedBy = [ "default.target" ];
                 script = ''
-                  ve-ctrl-tool -metricsHTTP "${cfg.metricsAddress}" ess-shelly \
+                  ve-ess-shelly \
+                    -metricsHTTP "${cfg.metricsAddress}" \
                     ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                     ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
                     ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \

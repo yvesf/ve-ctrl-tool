@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// ExampleShell3EM connects to shelly and prints all the stuff
+// ExampleShell3EM connects to shelly and prints all the stuff.
 func ExampleNewShelly3EM() {
 	shelly := NewShelly3EM("http://10.1.0.210")
 	d, err := shelly.Read()

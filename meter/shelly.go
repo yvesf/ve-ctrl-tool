@@ -32,8 +32,8 @@ type Shelly3EMData struct {
 	MQTT      struct {
 		Connected bool `json:"connected"`
 	} `json:"mqtt"`
-	RamFree  int `json:"ram_free"`
-	RamTotal int `json:"ram_total"`
+	RAMFree  int `json:"ram_free"`
+	RAMTotal int `json:"ram_total"`
 	Relays   []struct {
 		HasTimer       bool   `json:"has_timer"`
 		IsValid        bool   `json:"is_valid"`
@@ -60,23 +60,25 @@ type Shelly3EMData struct {
 	Uptime  int `json:"uptime"`
 	WifiSta struct {
 		Connected bool   `json:"connected"`
-		Ip        string `json:"ip"`
+		IP        string `json:"ip"`
 		Rssi      int    `json:"rssi"`
 		Ssid      string `json:"ssid"`
 	} `json:"wifi_sta"`
 }
 
-// Read returns the whole Shelly3EMData status update from the Shelly 3EM
+// Read returns the whole Shelly3EMData status update from the Shelly 3EM.
 func (s Shelly3EM) Read() (*Shelly3EMData, error) {
 	resp, err := http.Get(s.url + `/status`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from shelly device: %w", err)
 	}
-	if resp.StatusCode != 200 {
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code from shelly device: %v", resp.StatusCode)
 	}
 
-	var data = new(Shelly3EMData)
+	data := new(Shelly3EMData)
 	d := json.NewDecoder(resp.Body)
 	err = d.Decode(data)
 	if err != nil {

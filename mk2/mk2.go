@@ -1,4 +1,4 @@
-package victron
+package mk2
 
 import (
 	"context"
@@ -7,26 +7,27 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"ve-ctrl-tool/victron/veBus"
+	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
-type Mk2 struct {
-	*mk2IO
+// Adapter wraps Mk2IO and adds generic functions to execute commands.
+type Adapter struct {
+	*IO
 }
 
-func NewMk2(address string) (*Mk2, error) {
+func NewAdapter(address string) (*Adapter, error) {
 	reader, err := NewReader(address)
 	if err != nil {
 		return nil, err
 	}
-	return &Mk2{reader}, nil
+	return &Adapter{reader}, nil
 }
 
-// SetAddress selects VE.Bus device at 'address'
-func (m Mk2) SetAddress(ctx context.Context, address byte) error {
+// SetAddress selects VE.Bus device at 'address'.
+func (m Adapter) SetAddress(ctx context.Context, address byte) error {
 	log.Debug().Msgf("SetAddress 0x%x", address)
 	// 0x01 means "set"
-	frame, err := veBus.CommandA.Frame(0x01, address).WriteAndRead(ctx, m)
+	frame, err := vebus.CommandA.Frame(0x01, address).WriteAndRead(ctx, m)
 	if err != nil {
 		return fmt.Errorf("failed to select address: %w", err)
 	}
@@ -41,10 +42,10 @@ func (m Mk2) SetAddress(ctx context.Context, address byte) error {
 	return nil
 }
 
-func (m Mk2) GetAddress(ctx context.Context) (byte, error) {
+func (m Adapter) GetAddress(ctx context.Context) (byte, error) {
 	log.Debug().Msg("GetAddress")
 	// 0x00 means "not set"
-	frame, err := veBus.CommandA.Frame(0x00 /*ignored:*/, 0x00).WriteAndRead(ctx, m)
+	frame, err := vebus.CommandA.Frame(0x00 /*ignored:*/, 0x00).WriteAndRead(ctx, m)
 	if err != nil {
 		return 0, fmt.Errorf("failed to select address: %w", err)
 	}
@@ -53,39 +54,8 @@ func (m Mk2) GetAddress(ctx context.Context) (byte, error) {
 	return frame.Data[0], nil
 }
 
-// CommandSendSoftwareVersionPart0 is used to read the state of the device or to force the unit to go into a specific state.
-//func (m Mk2) CommandSendSoftwareVersionPart0(ctx context.Context) (int, error) {
-//	log.Debug().Msg("CommandSendSoftwareVersionPart0 request")
-//	frame, err := writeAndRead(ctx, m.mk2IO, victron.WCommandSendSoftwareVersionPart0.Frame(0x00, 0x00))
-//	if err != nil {
-//		return 0, fmt.Errorf("failed to execute CommandSendSoftwareVersion: %w", err)
-//	}
-//	if frame.Command != 0x82 {
-//		return 0, fmt.Errorf("wrong response command, got 0x%x, expected 0x%x", frame.Command, 0x82)
-//	}
-//	versionPart0 := int(frame[4]) + int(frame[5])<<8
-//	log.Info().Msgf("CommandSendSoftwareVersionPart0 response versionPart0 = %d", versionPart0)
-//	return versionPart0, nil
-//}
-
-// CommandSendSoftwareVersionPart1 is used to read the state of the device or to force the unit to go into a specific state.
-//func (m Mk2) CommandSendSoftwareVersionPart1(ctx context.Context) (int, error) {
-//	log.Debug().Msg("CommandSendSoftwareVersionPart1 request")
-//	frame, err := m.WriteAndReadFrame(ctx, victron.WCommandSendSoftwareVersionPart1.Frame(0x00, 0x00))
-//	if err != nil {
-//		return 0, fmt.Errorf("failed to execute CommandSendSoftwareVersion: %w", err)
-//	}
-//	if frame[3] != 0x83 {
-//		return 0, fmt.Errorf("wrong response command, got 0x%x, expected 0x%x", frame[3], 0x82)
-//	}
-//	versionPart0 := int(frame[4]) + int(frame[5])<<8
-//	log.Info().Msgf("CommandSendSoftwareVersionPart1 response versionPart1 = %d", versionPart0)
-//	return versionPart0, nil
-//}
-
 type DeviceStateRequestState byte
 
-//nolint:deadcode
 const (
 	DeviceStateRequestStateInquiry           = 0x0
 	DeviceStateRequestStateForceToEqualise   = 0x1
@@ -126,13 +96,14 @@ var DeviceStateResponseSubStates = map[int]DeviceStateResponseSubState{
 
 // CommandGetSetDeviceState is used to read the state of the device or to force the unit to go into a specific state.
 // Passing 'state' 0 means no change, just reading the current state.
-func (m Mk2) CommandGetSetDeviceState(ctx context.Context, setState DeviceStateRequestState) (state DeviceStateResponseState, subState DeviceStateResponseSubState, err error) {
+func (m Adapter) CommandGetSetDeviceState(ctx context.Context, setState DeviceStateRequestState,
+) (state DeviceStateResponseState, subState DeviceStateResponseSubState, err error) {
 	log.Debug().Msgf("CommandGetSetDeviceState setState=0x%x", setState)
-	frame, err := veBus.WCommandGetSetDeviceState.Frame(byte(setState), 0x00).WriteAndRead(ctx, m)
+	frame, err := vebus.WCommandGetSetDeviceState.Frame(byte(setState), 0x00).WriteAndRead(ctx, m)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to execute CommandGetSetDeviceState: %w", err)
 	}
-	if frame.Reply != veBus.WReplyCommandGetSetDeviceStateOK {
+	if frame.Reply != vebus.WReplyCommandGetSetDeviceStateOK {
 		return "", "", fmt.Errorf("invalid response code to CommandGetSetDeviceState")
 	}
 	if len(frame.Data) < 2 {
@@ -157,15 +128,16 @@ func (m Mk2) CommandGetSetDeviceState(ctx context.Context, setState DeviceStateR
 
 var ErrSettingNotSupported = errors.New("SETTING_NOT_SUPPORTED")
 
-func (m Mk2) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID byte) (lowValue, highValue byte, err error) {
-	frame, err := veBus.WCommandReadSetting.Frame(lowSettingID, highSettingID).WriteAndRead(ctx, m)
+func (m Adapter) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID byte,
+) (lowValue, highValue byte, err error) {
+	frame, err := vebus.WCommandReadSetting.Frame(lowSettingID, highSettingID).WriteAndRead(ctx, m)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to execute CommandGetSetDeviceState: %w", err)
 	}
 	switch frame.Reply {
-	case veBus.WReplySettingNotSupported:
+	case vebus.WReplySettingNotSupported:
 		return 0, 0, ErrSettingNotSupported
-	case veBus.WReplyReadSettingOK:
+	case vebus.WReplyReadSettingOK:
 	default:
 		return 0, 0, fmt.Errorf("unknown response: %v", frame.Reply.String())
 	}
@@ -179,16 +151,17 @@ func (m Mk2) CommandReadSetting(ctx context.Context, lowSettingID, highSettingID
 
 var ErrVariableNotSupported = errors.New("VARIABLE_NOT_SUPPORTED")
 
-func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId0, ramId1 byte) (value0Low, value0High, value1Low, value1High byte, err error) {
-	frame, err := veBus.WCommandReadRAMVar.Frame(ramId0, ramId1).WriteAndRead(ctx, m)
+func (m Adapter) CommandReadRAMVar(ctx context.Context, ramID0, ramID1 byte,
+) (value0Low, value0High, value1Low, value1High byte, err error) {
+	frame, err := vebus.WCommandReadRAMVar.Frame(ramID0, ramID1).WriteAndRead(ctx, m)
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("failed to execute CommandReadRAMVar: %w", err)
 	}
 
 	switch frame.Reply {
-	case veBus.WReplyVariableNotSupported:
+	case vebus.WReplyVariableNotSupported:
 		return 0, 0, 0, 0, ErrVariableNotSupported
-	case veBus.WReplyReadRAMOK:
+	case vebus.WReplyReadRAMOK:
 		break
 	default:
 		return 0, 0, 0, 0, fmt.Errorf("unknown response: %v", frame.Reply.String())
@@ -203,65 +176,66 @@ func (m Mk2) CommandReadRAMVar(ctx context.Context, ramId0, ramId1 byte) (value0
 	return frame.Data[0], frame.Data[1], frame.Data[2], frame.Data[3], nil
 }
 
-func (m Mk2) CommandReadRAMVarUnsigned16(ctx context.Context, ramId0, ramId1 byte) (value0, value1 uint16, err error) {
-	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramId0, ramId1)
+func (m Adapter) CommandReadRAMVarUnsigned16(ctx context.Context, ramID0, ramID1 byte,
+) (value0, value1 uint16, err error) {
+	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramID0, ramID1)
 	if err != nil {
 		return 0, 0, err
 	}
 	return uint16(v0l) | uint16(v0h)<<8, uint16(v1l) | uint16(v1h)<<8, nil
 }
 
-func (m Mk2) CommandReadRAMVarSigned16(ctx context.Context, ramId0, ramId1 byte) (value0, value1 int16, err error) {
-	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramId0, ramId1)
+func (m Adapter) CommandReadRAMVarSigned16(ctx context.Context, ramID0, ramID1 byte,
+) (value0, value1 int16, err error) {
+	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramID0, ramID1)
 	if err != nil {
 		return 0, 0, err
 	}
-	return veBus.ParseSigned16Bytes(v0l, v0h), veBus.ParseSigned16Bytes(v1l, v1h), nil
+	return vebus.ParseSigned16Bytes(v0l, v0h), vebus.ParseSigned16Bytes(v1l, v1h), nil
 }
 
-func (m Mk2) CommandWriteRAMVarDataSigned(ctx context.Context, ram uint16, value int16) error {
-	low, high := veBus.Signed16Bytes(value)
+func (m Adapter) CommandWriteRAMVarDataSigned(ctx context.Context, ram uint16, value int16) error {
+	low, high := vebus.Signed16Bytes(value)
 	return m.CommandWriteRAMVarData(ctx, ram, low, high)
 }
 
-func (m Mk2) CommandWriteRAMVarData(ctx context.Context, ram uint16, low, high byte) error {
-	m.Write(veBus.WCommandWriteRAMVar.Frame(byte(ram&0xff), byte(ram>>8)).Marshal()) // no response
-	frame, err := veBus.WCommandWriteData.Frame(low, high).WriteAndRead(ctx, m)
+func (m Adapter) CommandWriteRAMVarData(ctx context.Context, ram uint16, low, high byte) error {
+	m.Write(vebus.WCommandWriteRAMVar.Frame(byte(ram&0xff), byte(ram>>8)).Marshal()) // no response
+	frame, err := vebus.WCommandWriteData.Frame(low, high).WriteAndRead(ctx, m)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteRAMVarData: %w", err)
 	}
 	switch frame.Reply {
-	case veBus.WReplySuccesfulRAMWrite:
+	case vebus.WReplySuccesfulRAMWrite:
 		return nil
 	default:
 		return fmt.Errorf("unknown response: %v", frame.Reply.String())
 	}
 }
 
-func (m Mk2) CommandWriteViaID(ctx context.Context, id byte, dataLow, dataHigh byte) error {
+func (m Adapter) CommandWriteViaID(ctx context.Context, id byte, dataLow, dataHigh byte) error {
 	// [1]: true => ram value only, false => ram and eeprom
 	// [0]: true: setting, false: ram var
-	//var flags = byte(0b00000010)
-	var flags = byte(0b00000000)
-	frame, err := veBus.WCommandWriteViaID.Frame(flags, id, dataLow, dataHigh).WriteAndRead(ctx, m)
+	flags := byte(0b00000000)
+	frame, err := vebus.WCommandWriteViaID.Frame(flags, id, dataLow, dataHigh).WriteAndRead(ctx, m)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteViaID: %w", err)
 	}
 	switch frame.Reply {
-	case veBus.WReplySuccesfulRAMWrite, veBus.WReplySuccesfulSettingWrite:
+	case vebus.WReplySuccesfulRAMWrite, vebus.WReplySuccesfulSettingWrite:
 		return nil
 	default:
 		return fmt.Errorf("unknown response: %v", frame.Reply.String())
 	}
 }
 
-func (m Mk2) CommandWriteSettingData(ctx context.Context, setting uint16, dataLow, dataHigh byte) error {
-	m.Write(veBus.WCommandWriteSetting.Frame(byte(setting&0xff), byte(setting>>8)).Marshal()) // no response
-	frame, err := veBus.WCommandWriteData.Frame(dataLow, dataHigh).WriteAndRead(ctx, m)
+func (m Adapter) CommandWriteSettingData(ctx context.Context, setting uint16, dataLow, dataHigh byte) error {
+	m.Write(vebus.WCommandWriteSetting.Frame(byte(setting&0xff), byte(setting>>8)).Marshal()) // no response
+	frame, err := vebus.WCommandWriteData.Frame(dataLow, dataHigh).WriteAndRead(ctx, m)
 	if err != nil {
 		return fmt.Errorf("failed to execute CommandWriteSettingData:: %w", err)
 	}
-	if frame.Reply != veBus.WReplySuccesfulSettingWrite {
+	if frame.Reply != vebus.WReplySuccesfulSettingWrite {
 		return fmt.Errorf("write failed")
 	}
 	return nil

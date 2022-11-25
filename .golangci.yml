@@ -1,0 +1,16 @@
+linters:
+  enable: # additional linters
+    - errorlint
+    - bodyclose
+    - godot
+    - gofmt
+    - gofumpt
+    - goimports
+    - lll
+    - nakedret
+    - predeclared
+    - revive
+    - staticcheck
+    - stylecheck
+    - usestdlibvars
+    - whitespace

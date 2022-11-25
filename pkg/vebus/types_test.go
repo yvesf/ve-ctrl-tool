@@ -1,4 +1,4 @@
-package veBus
+package vebus
 
 import (
 	"testing"
