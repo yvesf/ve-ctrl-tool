@@ -49,7 +49,7 @@ Configure NixOS Module:
 ```nix
 {
   # ...
-  services.ess-shelly.enable = true;
-  services.ess-shelly.shellyUrl = "http://ip-address";
+  services.ve-ess-shelly.enable = true;
+  services.ve-ess-shelly.shellyUrl = "http://ip-address";
 }
 ```
