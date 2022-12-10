@@ -145,7 +145,7 @@ func main() {
 			log.Debug().Msg("multiplus go-routine done")
 			wg.Done()
 		}()
-		var lastUpdate time.Time
+		var lastSetpointUpdate, lastRAMIDRead time.Time
 		ctx := context.Background()
 		b := backoff.NewExponentialBackoff(time.Second, time.Second*50)
 
@@ -172,7 +172,7 @@ func main() {
 				setpoint = 0
 			}
 
-			if setpoint != setpointComitted || time.Since(lastUpdate) > time.Second*30 {
+			if setpoint != setpointComitted || time.Since(lastSetpointUpdate) > time.Second*30 {
 				log.Debug().Int16("setpoint", setpoint).Msg("write setpoint to multiplus")
 				err := mk2Ess.SetpointSet(ctx, setpoint)
 				if err != nil {
@@ -181,30 +181,35 @@ func main() {
 				}
 
 				setpointComitted = setpoint
-				lastUpdate = time.Now()
+				lastSetpointUpdate = time.Now()
 				log.Info().Int16("setpoint-committed", setpointComitted).
 					Msg("Multiplus set")
 				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
 			}
 
-			iBat, uBat, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to read IBat/UBat")
-				goto handleError
+			// update metrics every 5s at max.
+			// This is to save time and have it available to update setpoint.
+			if time.Since(lastRAMIDRead) > time.Second*5 {
+				iBat, uBat, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to read IBat/UBat")
+					goto handleError
+				}
+				inverterPowerRAM, _, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to read InverterPower1")
+					goto handleError
+				}
+				log.Debug().Float32("IBat", float32(iBat)/10).
+					Float32("UBat", float32(uBat)/100).
+					Float32("InverterPower", float32(inverterPowerRAM)).
+					Msg("Multiplus Stats")
+				metricMultiplusIBat.With().Set(float64(iBat) / 10)
+				metricMultiplusUBat.With().Set(float64(uBat) / 100)
+				metricMultiplusInverterPower.With().Set(float64(inverterPowerRAM))
+				inverterPower.Set(PowerFlowWatt(inverterPowerRAM))
+				lastRAMIDRead = time.Now()
 			}
-			inverterPowerRAM, _, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to read InverterPower1")
-				goto handleError
-			}
-			log.Debug().Float32("IBat", float32(iBat)/10).
-				Float32("UBat", float32(uBat)/100).
-				Float32("InverterPower", float32(inverterPowerRAM)).
-				Msg("Multiplus Stats")
-			metricMultiplusIBat.With().Set(float64(iBat) / 10)
-			metricMultiplusUBat.With().Set(float64(uBat) / 100)
-			metricMultiplusInverterPower.With().Set(float64(inverterPowerRAM))
-			inverterPower.Set(PowerFlowWatt(inverterPowerRAM))
 
 			errors = 0
 			continue
@@ -321,8 +326,8 @@ controlLoop:
 
 		metricControlInput.With().Set(controllerInputM)
 		controllerOut := pidC.Update(controllerInputM) // Take consumption negative to regulate to 0
-		// round to 5 watt steps
-		controllerOut = math.Round(controllerOut/5) * 5
+		// round to 10 watt steps. This is to reduce the need for updating the setpoint for marginal changes.
+		controllerOut = math.Round(controllerOut/10) * 10
 		// don't do anything around +/- 10 around the control point (set ESS to 0)
 		if controllerOut > -1*(*flagZeroPointWindow) && controllerOut < *flagZeroPointWindow {
 			controllerOut = 0
