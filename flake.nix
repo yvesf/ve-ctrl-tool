@@ -60,17 +60,16 @@
             lib.mkIf cfg.enable {
               systemd.services.ve-ess-shelly = {
                 description = "the multiplus + shelly controller";
-                path = [ ve-ctrl-tool ];
                 wantedBy = [ "default.target" ];
-                script = ''
-                  ve-ess-shelly \
-                    -metricsHTTP "${cfg.metricsAddress}" \
-                    ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
-                    ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
-                    ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
-                    "${cfg.shellyUrl}"
-                '';
                 serviceConfig = {
+                  ExecStart = ''
+                    ${ve-ctrl-tool}/bin/ve-ess-shelly \
+                      -metricsHTTP "${cfg.metricsAddress}" \
+                      ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
+                      ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
+                      ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
+                      "${cfg.shellyUrl}"
+                  '';
                   LockPersonality = true;
                   CapabilityBoundingSet = "";
                   DeviceAllow = "${cfg.serialDevice}";
@@ -86,7 +85,7 @@
                   ProtectKernelLogs = true;
                   ProtectKernelModules = true;
                   ProtectKernelTunables = true;
-                  ProtectProc = true;
+                  ProtectProc = "noaccess";
                   ProtectSystem = "strict";
                   RemoveIPC = true;
                   Restart = "always";
