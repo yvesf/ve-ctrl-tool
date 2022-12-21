@@ -173,7 +173,7 @@ func main() {
 			}
 
 			if setpoint != setpointComitted || time.Since(lastSetpointUpdate) > time.Second*30 {
-				log.Debug().Int16("setpoint", setpoint).Msg("write setpoint to multiplus")
+				log.Debug().Int16("value", setpoint).Msg("write setpoint to multiplus")
 				err := mk2Ess.SetpointSet(ctx, setpoint)
 				if err != nil {
 					log.Error().Err(err).Msg("failed to write to ESS RAM")
@@ -182,8 +182,7 @@ func main() {
 
 				setpointComitted = setpoint
 				lastSetpointUpdate = time.Now()
-				log.Info().Int16("setpoint-committed", setpointComitted).
-					Msg("Multiplus set")
+				log.Info().Int16("value", setpointComitted).Msg("wrote setpoint")
 				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
 			}
 
@@ -348,10 +347,10 @@ controlLoop:
 	}
 
 	childCtxCancel() // signal go-routines to exit
-	log.Info().Msg("Wait for go-routines")
+	log.Info().Msg("shutdown: wait for go-routines to finish")
 	wg.Wait()
 
-	log.Info().Msg("reset ESS setpoint to 0")
+	log.Info().Msg("shutdown: reset ESS setpoint to 0")
 	err = mk2Ess.SetpointSet(context.Background(), 0)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to write to ESS Ram")
