@@ -8,7 +8,7 @@
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
-        vendorSha256 = "sha256-aPxfZDTjXAW1WLT26rYTkQDaLeWH9uekah1rCJqycio=";
+        vendorSha256 = "sha256-jNSn0uPxwzu5S/gGY3guOVdkQtFTqgsGx4dMbHcYdUA=";
       };
     in
     flake-utils.lib.eachDefaultSystem
@@ -18,13 +18,11 @@
           defaultPackage = packages.ve-ctrl-tool;
           devShell =
             with import nixpkgs { inherit system; }; mkShell {
-              packages = [ go nixpkgs-fmt golangci-lint ];
+              packages = [ go nixpkgs-fmt golangci-lint gofumpt ];
             };
         }) // {
       nixosModule = { pkgs, config, lib, ... }:
-        let
-          ve-ctrl-tool = pkgs.callPackage packageDef { };
-        in
+        let ve-ctrl-tool = pkgs.callPackage packageDef { }; in
         {
           options.services.ve-ess-shelly = {
             enable = lib.mkEnableOption "the multiplus + shelly controller";
@@ -55,9 +53,38 @@
               type = lib.types.nullOr lib.types.int;
               default = null;
             };
+            gpio = lib.mkOption {
+              type = lib.types.listOf (lib.types.submodule {
+                options = {
+                  pin = lib.mkOption {
+                    type = lib.types.ints.positive;
+                    description = "GPIO Pin (GPIO number of gpiochip0)";
+                  };
+                  power = lib.mkOption {
+                    type = lib.types.ints.positive;
+                    description = "Assumed controlled power of this gpio";
+                  };
+                  delaySec = lib.mkOption {
+                    type = lib.types.ints.positive;
+                    description = "On/Off delay for this GPIO";
+                  };
+                };
+              });
+              description = "GPIOs in priority order";
+            };
+            gpioDelaySec = lib.mkOption {
+              type = lib.types.nullOr lib.types.int;
+              default = null;
+              description = "GPIO global delay seconds";
+            };
           };
-          config = let cfg = config.services.ve-ess-shelly; in
+          config =
+            let
+              cfg = config.services.ve-ess-shelly;
+              makeGPIOString = cfg: lib.concatStringsSep " " (map (c: "-gpio ${toString c.pin},${toString c.power},${toString c.delaySec}s") cfg);
+            in
             lib.mkIf cfg.enable {
+              environment.systemPackages = [ ve-ctrl-tool ]; # add to system because it's handy for debugging
               systemd.services.ve-ess-shelly = {
                 description = "the multiplus + shelly controller";
                 wantedBy = [ "default.target" ];
@@ -67,12 +94,14 @@
                       -metricsHTTP "${cfg.metricsAddress}" \
                       ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                       ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
+                      ${makeGPIOString cfg.gpio} \
+                      ${lib.optionalString (cfg.gpioDelaySec != null) "-gpioDelay ${toString cfg.gpioDelaySec}"} \
                       ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
                       "${cfg.shellyUrl}"
                   '';
                   LockPersonality = true;
                   CapabilityBoundingSet = "";
-                  DeviceAllow = "${cfg.serialDevice}";
+                  DeviceAllow = [ "${cfg.serialDevice}" "/dev/gpiochip0" ];
                   DynamicUser = true;
                   Group = "dialout";
                   MemoryDenyWriteExecute = true;

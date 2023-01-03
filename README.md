@@ -1,11 +1,11 @@
 # ve-ctrl-tool (Victron Energy VE.Bus MK2 protocol tool)
 
 this is a library and cli tools to interact with Victron (https://www.victronenergy.com/) devices
-over the Mk2/3 adapter.
+over the Mk3 adapter.
 
 The author and the project are not affiliated with the Victron Company. The brand name is used
-only in an educational context. Everything here is shared for educational purpose only and 
-for use at your own risk.
+only in educational context. Everything here is shared for educational purpose only and 
+for use at your own risk only.
 
 ## Usage
 

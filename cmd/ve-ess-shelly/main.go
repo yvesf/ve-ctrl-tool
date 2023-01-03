@@ -16,6 +16,7 @@ import (
 
 	"github.com/yvesf/ve-ctrl-tool/backoff"
 	"github.com/yvesf/ve-ctrl-tool/cmd"
+	"github.com/yvesf/ve-ctrl-tool/gpio"
 	"github.com/yvesf/ve-ctrl-tool/meter"
 	"github.com/yvesf/ve-ctrl-tool/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
@@ -95,13 +96,21 @@ var (
 		"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
 	flagOffset          = flag.Float64("offset", -10.0, "Power measurement offset")
 	flagZeroPointWindow = flag.Float64("zeroWindow", 20, "Do not operate if measurement is in this +/- window")
+	flagGpioDelay       = flag.Float64("gpioDelay", 30.0, "time in seconds between (de-)activating another gpio")
+	gpioConsumers       gpio.ConsumerList
 )
 
 func main() {
+	flag.Var(&gpioConsumers, "gpio", "GPIO Consumers (repeat in priority order). "+
+		"Format: GPIO,WATT,DELAY. Example: 23,400,15m. GPIO-num is Broadcom pin number.")
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	adapter := cmd.CommonInit(ctx)
+
+	log.Info().Msg("gpio consumers " + gpioConsumers.String())
+	defer gpioConsumers.Close()
 
 	// Metrics HTTP endpoint
 	if *flagMetricsHTTP != `` {
@@ -182,7 +191,7 @@ func main() {
 
 				setpointComitted = setpoint
 				lastSetpointUpdate = time.Now()
-				log.Info().Int16("value", setpointComitted).Msg("wrote setpoint")
+				log.Debug().Int16("value", setpointComitted).Msg("wrote setpoint")
 				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
 			}
 
@@ -234,9 +243,7 @@ func main() {
 
 	wg.Add(1)
 	go func() {
-		const (
-			shellyReadInterval = time.Millisecond * 800
-		)
+		const shellyReadInterval = time.Millisecond * 800
 
 		t := time.NewTimer(0)
 		defer t.Stop()
@@ -288,7 +295,10 @@ func main() {
 	}()
 
 	// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
-	var timeLastInverterProduction time.Time
+	var (
+		timeLastInverterProduction time.Time
+		timeLastGPIOChange         time.Time
+	)
 
 	pidC := pidctrl.NewPIDController(0.05, 0.15, 0.01)
 	pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
@@ -344,6 +354,18 @@ controlLoop:
 		min, max := pidC.OutputLimits()
 		metricControlPIDMin.With().Set(min)
 		metricControlPIDMax.With().Set(max)
+
+		// iterate over gpio consumers in given order
+		// break once first consumer has changed
+		if timeLastGPIOChange.IsZero() ||
+			time.Since(timeLastGPIOChange) > time.Duration(*flagGpioDelay)*time.Second {
+			for _, g := range gpioConsumers {
+				if g.Offer(int(m.ConsumptionPositive())) {
+					timeLastGPIOChange = time.Now()
+					break
+				}
+			}
+		}
 	}
 
 	childCtxCancel() // signal go-routines to exit
