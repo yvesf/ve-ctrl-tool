@@ -5,25 +5,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/yvesf/ve-ctrl-tool/backoff"
 	"github.com/yvesf/ve-ctrl-tool/cmd"
-	"github.com/yvesf/ve-ctrl-tool/gpio"
-	"github.com/yvesf/ve-ctrl-tool/meter"
+	"github.com/yvesf/ve-ctrl-tool/consumer"
 	"github.com/yvesf/ve-ctrl-tool/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 
 	"github.com/bsm/openmetrics"
 	"github.com/bsm/openmetrics/omhttp"
-	"github.com/felixge/pidctrl"
 	"github.com/rs/zerolog/log"
 )
 
@@ -96,21 +92,27 @@ var (
 		"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
 	flagOffset          = flag.Float64("offset", -10.0, "Power measurement offset")
 	flagZeroPointWindow = flag.Float64("zeroWindow", 20, "Do not operate if measurement is in this +/- window")
-	flagGpioDelay       = flag.Float64("gpioDelay", 30.0, "time in seconds between (de-)activating another gpio")
-	gpioConsumers       gpio.ConsumerList
+	flagConsumerDelay   = flag.Float64("consumerDelay", 30.0, "time in seconds between (de-)activating another consumer")
+	flagConsumer        consumer.List
 )
 
 func main() {
-	flag.Var(&gpioConsumers, "gpio", "GPIO Consumers (repeat in priority order). "+
-		"Format: GPIO,WATT,DELAY. Example: 23,400,15m. GPIO-num is Broadcom pin number.")
+	flag.Var(&flagConsumer, "consumer", "Consumers switches (repeat in priority order). "+
+		"Format: POWER,DELAY,URL. Example: \"400,15m,shelly1://192.168.0.3\"")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	adapter := cmd.CommonInit(ctx)
 
-	log.Info().Msg("gpio consumers " + gpioConsumers.String())
-	defer gpioConsumers.Close()
+	log.Info().Msg("consumer switches " + flagConsumer.String())
+	// reset consumers to 0
+	for _, c := range flagConsumer {
+		if err := c.Offer(0); err != nil {
+			log.Info().Err(err).Msg("failed to initialize consumer")
+		}
+	}
+	defer flagConsumer.Close()
 
 	// Metrics HTTP endpoint
 	if *flagMetricsHTTP != `` {
@@ -137,331 +139,58 @@ func main() {
 		panic(err)
 	}
 
-	wg := sync.WaitGroup{}
+	shelly := shelly.Shelly3EM{URL: flag.Args()[0], Client: http.DefaultClient}
 
-	// childCtx is just used to communicate shutdown to go-routines
-	childCtx, childCtxCancel := context.WithCancel(context.Background())
-	defer childCtxCancel()
+	run(ctx, mk2Driver{mk2: adapter, ess: mk2Ess}, shellyDriver(shelly), flagConsumer)
+}
 
-	// shared Variables
-	var setpointSet, meterMeasurement, inverterPower Measurement
+type shellyDriver shelly.Shelly3EM
 
-	// Run loop to send commands to the Multiplus
-	wg.Add(1)
-	go func() {
-		defer func() {
-			childCtxCancel()
-			log.Debug().Msg("multiplus go-routine done")
-			wg.Done()
-		}()
-		var lastSetpointUpdate, lastRAMIDRead time.Time
-		ctx := context.Background()
-		b := backoff.NewExponentialBackoff(time.Second, time.Second*50)
-
-		var (
-			errors           = 0
-			setpointComitted int16
-		)
-	measurementLoop:
-		for {
-			var (
-				iBat, uBat, inverterPowerRAM, setpoint int16
-				err                                    error
-			)
-
-			select {
-			case <-childCtx.Done():
-				break measurementLoop
-			case <-time.After(time.Millisecond * 50):
-			}
-
-			if v, ok := setpointSet.Get(); ok {
-				setpoint = int16(v.ConsumptionPositive())
-			} else {
-				setpoint = 0
-			}
-
-			if setpoint != setpointComitted || time.Since(lastSetpointUpdate) > time.Second*30 {
-				log.Debug().Int16("value", setpoint).Msg("write setpoint to multiplus")
-				err := mk2Ess.SetpointSet(ctx, setpoint)
-				if err != nil {
-					log.Error().Err(err).Msg("failed to write to ESS RAM")
-					goto handleError
-				}
-
-				setpointComitted = setpoint
-				lastSetpointUpdate = time.Now()
-				log.Debug().Int16("value", setpointComitted).Msg("wrote setpoint")
-				metricMultiplusSetpoint.With().Set(float64(setpointComitted))
-			}
-
-			// update metrics every 5s at max.
-			// This is to save time and have it available to update setpoint.
-			if time.Since(lastRAMIDRead) > time.Second*5 {
-				iBat, uBat, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
-				if err != nil {
-					log.Error().Err(err).Msg("failed to read IBat/UBat")
-					goto handleError
-				}
-				inverterPowerRAM, _, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
-				if err != nil {
-					log.Error().Err(err).Msg("failed to read InverterPower1")
-					goto handleError
-				}
-				log.Debug().Float32("IBat", float32(iBat)/10).
-					Float32("UBat", float32(uBat)/100).
-					Float32("InverterPower", float32(inverterPowerRAM)).
-					Msg("Multiplus Stats")
-				metricMultiplusIBat.With().Set(float64(iBat) / 10)
-				metricMultiplusUBat.With().Set(float64(uBat) / 100)
-				metricMultiplusInverterPower.With().Set(float64(inverterPowerRAM))
-				inverterPower.Set(PowerFlowWatt(inverterPowerRAM))
-				lastRAMIDRead = time.Now()
-			}
-
-			errors = 0
-			continue
-
-		handleError:
-			metricMultiplusInverterPower.With().Reset(openmetrics.GaugeOptions{})
-			metricMultiplusUBat.With().Reset(openmetrics.GaugeOptions{})
-			metricMultiplusIBat.With().Reset(openmetrics.GaugeOptions{})
-			metricMultiplusSetpoint.With().Reset(openmetrics.GaugeOptions{})
-
-			errors++
-			sleepDuration, next := b.Next(errors)
-			if !next {
-				break
-			}
-			log.Info().Float64("seconds", sleepDuration.Seconds()).Msg("sleep after error")
-			select {
-			case <-childCtx.Done():
-			case <-time.After(sleepDuration):
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		const shellyReadInterval = time.Millisecond * 800
-
-		t := time.NewTimer(0)
-		defer t.Stop()
-		defer func() {
-			t.Stop()
-			childCtxCancel()
-			log.Debug().Msg("shelly go-routine done")
-			wg.Done()
-		}()
-
-		buf := newRingbuf(5)
-		shelly := meter.NewShelly3EM(flag.Args()[0])
-		b := backoff.NewExponentialBackoff(shellyReadInterval, shellyReadInterval*50)
-		errCount := 0
-
-	measurementLoop:
-		for {
-			select {
-			case <-t.C:
-				value, err := shelly.Read()
-				if err != nil {
-					log.Error().Err(err).Msg("failed to read from shelly")
-					errCount++
-					meterMeasurement.SetInvalid()
-					wait, next := b.Next(errCount)
-					if !next {
-						break measurementLoop
-					}
-					t.Reset(wait)
-					continue
-				}
-				errCount = 0
-
-				metricShellyPower.With("total").Set(value.TotalPower)
-				for i, m := range value.EMeters {
-					metricShellyPower.With(fmt.Sprintf("emeter%d", i)).Set(m.Power)
-				}
-
-				buf.Add(value.TotalPower)
-				mean := buf.Mean()
-				metricShellyPower.With("totalMean").Set(mean)
-				meterMeasurement.Set(ConsumptionPositive(mean))
-
-				t.Reset(shellyReadInterval)
-			case <-childCtx.Done():
-				return
-			}
-		}
-	}()
-
-	// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
-	var (
-		timeLastInverterProduction time.Time
-		timeLastGPIOChange         time.Time
-	)
-
-	pidC := pidctrl.NewPIDController(0.05, 0.15, 0.01)
-	pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
-
-controlLoop:
-	for ctx.Err() == nil {
-		select {
-		case <-ctx.Done():
-			break controlLoop
-		case <-childCtx.Done():
-			break controlLoop
-		case <-time.After(time.Millisecond * 250):
-		}
-		m, haveMeasurement := meterMeasurement.Get()
-		if !haveMeasurement {
-			setpointSet.SetInvalid()
-			metricControlSetpoint.With().Reset(openmetrics.GaugeOptions{})
-			continue
-		}
-		invertCurrentPower, haveMeasurement := inverterPower.Get()
-		if !haveMeasurement {
-			invertCurrentPower = 0
-		}
-
-		// add current inverter power as feedback onto measurement to reduce oscillation
-		controllerInputM := m.ConsumptionNegative() + *flagOffset
-		if setpointSet.valid {
-			diff := 0.6 * (setpointSet.value.ConsumptionPositive() + invertCurrentPower.ConsumptionPositive())
-			controllerInputM += diff
-			metricControlInputDiff.With().Set(diff)
-		} else {
-			metricControlInputDiff.With().Reset(openmetrics.GaugeOptions{})
-		}
-
-		metricControlInput.With().Set(controllerInputM)
-		controllerOut := pidC.Update(controllerInputM) // Take consumption negative to regulate to 0
-		// round to 10 watt steps. This is to reduce the need for updating the setpoint for marginal changes.
-		controllerOut = math.Round(controllerOut/10) * 10
-		// don't do anything around +/- 10 around the control point (set ESS to 0)
-		if controllerOut > -1*(*flagZeroPointWindow) && controllerOut < *flagZeroPointWindow {
-			controllerOut = 0
-		}
-		setpointSet.Set(ConsumptionPositive(controllerOut))
-		metricControlSetpoint.With().Set(controllerOut)
-
-		if v, _ := setpointSet.Get(); v.ConsumptionNegative() >= float64(*flagMaxWattCharge)/2.0 {
-			timeLastInverterProduction = time.Now()
-			pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverterPeak)
-		} else if time.Since(timeLastInverterProduction) > inverterPeakMaximumTimeWindow {
-			pidC.SetOutputLimits(-1*(*flagMaxWattCharge), *flagMaxWattInverter)
-		}
-
-		min, max := pidC.OutputLimits()
-		metricControlPIDMin.With().Set(min)
-		metricControlPIDMax.With().Set(max)
-
-		// iterate over gpio consumers in given order
-		// break once first consumer has changed
-		if timeLastGPIOChange.IsZero() ||
-			time.Since(timeLastGPIOChange) > time.Duration(*flagGpioDelay)*time.Second {
-			for _, g := range gpioConsumers {
-				if g.Offer(int(m.ConsumptionPositive())) {
-					timeLastGPIOChange = time.Now()
-					break
-				}
-			}
-		}
-	}
-
-	childCtxCancel() // signal go-routines to exit
-	log.Info().Msg("shutdown: wait for go-routines to finish")
-	wg.Wait()
-
-	log.Info().Msg("shutdown: reset ESS setpoint to 0")
-	err = mk2Ess.SetpointSet(context.Background(), 0)
+func (s shellyDriver) Read() (PowerFlowWatt, error) {
+	data, err := shelly.Shelly3EM(s).Read()
 	if err != nil {
-		log.Error().Err(err).Msg("failed to write to ESS Ram")
+		return 0, err
 	}
 
-	defer func() {
-		log.Info().Msg("ess-shelly finished")
-	}()
-}
-
-type ringbuf struct {
-	buf []float64
-	p   int
-	s   int
-}
-
-func newRingbuf(size int) *ringbuf {
-	return &ringbuf{
-		s: size,
+	metricShellyPower.With("total").Set(data.TotalPower)
+	for i, m := range data.EMeters {
+		metricShellyPower.With(fmt.Sprintf("emeter%d", i)).Set(m.Power)
 	}
+
+	return ConsumptionPositive(data.TotalPower), nil
 }
 
-func (r *ringbuf) Add(v float64) {
-	if len(r.buf) < r.s {
-		r.buf = append(r.buf, v)
-		return
+type mk2Driver struct {
+	ess *mk2.ESS
+	mk2 *mk2.Adapter
+}
+
+func (m mk2Driver) SetpointSet(ctx context.Context, value int16) error {
+	return m.ess.SetpointSet(ctx, value)
+}
+
+func (m mk2Driver) Stats(ctx context.Context) (EssStats, error) {
+	iBat, uBat, err := m.mk2.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
+	if err != nil {
+		return EssStats{}, fmt.Errorf("failed to read IBat/UBat: %w", err)
 	}
-	r.buf[r.p] = v
-	r.p = (r.p + 1) % r.s
-}
 
-func (r *ringbuf) Mean() float64 {
-	var sum float64
-	for _, v := range r.buf {
-		sum += v
+	inverterPowerRAM, _, err := m.mk2.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
+	if err != nil {
+		return EssStats{}, fmt.Errorf("failed to read InverterPower1: %w", err)
 	}
-	return sum / float64(len(r.buf))
-}
 
-// PowerFlowWatt type represent power that can flow in two directions: Production and Consumption
-// Flow is represented by positive/negative values.
-type PowerFlowWatt float64
+	log.Debug().Float32("IBat", float32(iBat)/10).
+		Float32("UBat", float32(uBat)/100).
+		Float32("InverterPower", float32(inverterPowerRAM)).
+		Msg("Multiplus Stats")
+	metricMultiplusIBat.With().Set(float64(iBat) / 10)
+	metricMultiplusUBat.With().Set(float64(uBat) / 100)
+	metricMultiplusInverterPower.With().Set(float64(inverterPowerRAM))
 
-func ConsumptionPositive(watt float64) PowerFlowWatt {
-	return PowerFlowWatt(watt)
-}
-
-func (p PowerFlowWatt) String() string {
-	if p < 0 {
-		return fmt.Sprintf("Production(%.2f)", -1*p)
-	}
-	return fmt.Sprintf("Consumption(%.2f)", p)
-}
-
-func (p PowerFlowWatt) ConsumptionPositive() float64 {
-	return float64(p)
-}
-
-func (p PowerFlowWatt) ConsumptionNegative() float64 {
-	return float64(-p)
-}
-
-// Measurement is to share PowerFlowWatt values between go-routines.
-// like an "Optional" type it can set to hold currently no value.
-type Measurement struct {
-	m     sync.RWMutex
-	value PowerFlowWatt
-	valid bool
-}
-
-func (o *Measurement) SetInvalid() {
-	o.m.Lock()
-	defer o.m.Unlock()
-	o.valid = false
-	o.value = 0.0
-}
-
-func (o *Measurement) Set(v PowerFlowWatt) {
-	o.m.Lock()
-	defer o.m.Unlock()
-	o.value = v
-	o.valid = true
-}
-
-func (o *Measurement) Get() (value PowerFlowWatt, valid bool) {
-	o.m.RLock()
-	defer o.m.RUnlock()
-	if !o.valid {
-		return 0.0, false
-	}
-	return o.value, true
+	return EssStats{
+		IBat:          float64(iBat) / 10,
+		UBat:          float64(uBat) / 100,
+		InverterPower: int(inverterPowerRAM),
+	}, nil
 }

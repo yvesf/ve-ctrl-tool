@@ -48,8 +48,16 @@ Screenshot of monitoring of a 12V Multiplus (smallest available model):
 Configure NixOS Module:
 ```nix
 {
-  # ...
-  services.ve-ess-shelly.enable = true;
-  services.ve-ess-shelly.shellyUrl = "http://ip-address";
+  services.ve-ess-shelly = {
+    enable = true;
+    maxInverter = 120;
+    maxInverterPeak = 800;
+    shellyUrl = "http://shellyem3-.1.localnet.cc";
+    consumer = [{
+      url = "shelly1://shellyplus1pm-/";
+      power = 350;
+      delaySec = 5;
+    }];
+  };
 }
 ```

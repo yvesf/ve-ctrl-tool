@@ -1,17 +1,15 @@
-package meter
+package shelly
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
 type Shelly3EM struct {
-	url string
-}
-
-func NewShelly3EM(url string) *Shelly3EM {
-	return &Shelly3EM{url: url}
+	Client *http.Client
+	URL    string
 }
 
 type Shelly3EMData struct {
@@ -68,7 +66,8 @@ type Shelly3EMData struct {
 
 // Read returns the whole Shelly3EMData status update from the Shelly 3EM.
 func (s Shelly3EM) Read() (*Shelly3EMData, error) {
-	resp, err := http.Get(s.url + `/status`)
+	req, _ := http.NewRequest(http.MethodGet, s.URL+"/status", nil)
+	resp, err := s.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from shelly device: %w", err)
 	}
@@ -78,8 +77,11 @@ func (s Shelly3EM) Read() (*Shelly3EMData, error) {
 		return nil, fmt.Errorf("unexpected status code from shelly device: %v", resp.StatusCode)
 	}
 
+	// we expect no valid response larger than 1mb
+	bodyReader := io.LimitReader(resp.Body, 1024*1024)
+
 	data := new(Shelly3EMData)
-	d := json.NewDecoder(resp.Body)
+	d := json.NewDecoder(bodyReader)
 	err = d.Decode(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse response from shelly device: %w", err)

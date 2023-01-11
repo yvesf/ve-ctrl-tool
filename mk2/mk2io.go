@@ -147,7 +147,7 @@ func (r *IO) StartReader() error {
 				if len(f) == 8 && f[2] == 'V' {
 					log.Trace().Hex("data", f[2:]).Msgf("received broadcast frame 'V'")
 				} else {
-					log.Debug().Hex("data", f).Msg("received frame")
+					log.Debug().Hex("data", f).Msgf("received %v bytes", len(f))
 					for _, l := range listeners {
 						select {
 						case l <- f:
@@ -264,7 +264,7 @@ func (r *IO) Write(data []byte) {
 	if err != nil {
 		panic(err) // todo
 	}
-	log.Debug().Hex("data", data).Msgf("sent %v bytes ", n)
+	log.Debug().Hex("data", data).Msgf("sent %v bytes", n)
 }
 
 func (r *IO) Close(l chan []byte) {

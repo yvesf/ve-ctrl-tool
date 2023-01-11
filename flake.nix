@@ -53,49 +53,52 @@
               type = lib.types.nullOr lib.types.int;
               default = null;
             };
-            gpio = lib.mkOption {
+            consumer = lib.mkOption {
               type = lib.types.listOf (lib.types.submodule {
                 options = {
-                  pin = lib.mkOption {
-                    type = lib.types.ints.positive;
-                    description = "GPIO Pin (GPIO number of gpiochip0)";
+                  url = lib.mkOption {
+                    type = lib.types.strMatching "shelly1://.+";
+                    description = "shelly1://host:port (port is optional)";
                   };
                   power = lib.mkOption {
                     type = lib.types.ints.positive;
-                    description = "Assumed controlled power of this gpio";
+                    description = "Assumed controlled power of this consumer";
                   };
                   delaySec = lib.mkOption {
                     type = lib.types.ints.positive;
-                    description = "On/Off delay for this GPIO";
+                    description = "On/Off delay for this consumer";
                   };
                 };
               });
-              description = "GPIOs in priority order";
+              description = "Consumer in priority order";
             };
-            gpioDelaySec = lib.mkOption {
+            consumerDelaySec = lib.mkOption {
               type = lib.types.nullOr lib.types.int;
               default = null;
-              description = "GPIO global delay seconds";
+              description = "Consumer global delay seconds";
             };
           };
           config =
             let
               cfg = config.services.ve-ess-shelly;
-              makeGPIOString = cfg: lib.concatStringsSep " " (map (c: "-gpio ${toString c.pin},${toString c.power},${toString c.delaySec}s") cfg);
+              makeConsumerString = cfg: lib.concatStringsSep " " (map (c: "-consumer \"${toString c.power},${toString c.delaySec}s,${c.url}\"") cfg);
             in
             lib.mkIf cfg.enable {
               environment.systemPackages = [ ve-ctrl-tool ]; # add to system because it's handy for debugging
               systemd.services.ve-ess-shelly = {
                 description = "the multiplus + shelly controller";
                 wantedBy = [ "default.target" ];
+                unitConfig = {
+                  StartLimitInterval = 0;
+                };
                 serviceConfig = {
                   ExecStart = ''
                     ${ve-ctrl-tool}/bin/ve-ess-shelly \
                       -metricsHTTP "${cfg.metricsAddress}" \
                       ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                       ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
-                      ${makeGPIOString cfg.gpio} \
-                      ${lib.optionalString (cfg.gpioDelaySec != null) "-gpioDelay ${toString cfg.gpioDelaySec}"} \
+                      ${makeConsumerString cfg.consumer} \
+                      ${lib.optionalString (cfg.consumerDelaySec != null) "-consumerDelay ${toString cfg.gpioDelaySec}"} \
                       ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
                       "${cfg.shellyUrl}"
                   '';
@@ -118,6 +121,7 @@
                   ProtectSystem = "strict";
                   RemoveIPC = true;
                   Restart = "always";
+                  RestartSec = "10s";
                   RestrictAddressFamilies = "AF_INET AF_INET6";
                   RestrictNamespaces = true;
                   RestrictRealtime = true;

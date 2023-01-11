@@ -18,7 +18,7 @@ import (
 	"syscall"
 
 	"github.com/rs/zerolog/log"
-	"github.com/yvesf/ve-ctrl-tool/meter"
+	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
 )
 
 var (
@@ -32,7 +32,7 @@ func main() {
 	server := http.Server{
 		Addr: *flagListenAddr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var doc meter.Shelly3EMData
+			var doc shelly.Shelly3EMData
 			doc.TotalPower = float64(atomic.LoadInt64(&currentValue))
 
 			v := doc.TotalPower / 3
