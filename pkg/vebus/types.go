@@ -29,11 +29,10 @@ func ParseSigned16Bytes(low, high byte) int16 {
 
 // Checksum implements the check-summing algorithm for ve.bus.
 func Checksum(data []byte) byte {
-	sum := byte(0)
+	checksum := byte(0)
 	for _, d := range data {
-		sum += d
+		checksum -= d
 	}
-	checksum := 255 - (sum % 255) + 1
 	return checksum
 }
 

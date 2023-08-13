@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
-type Shelly3EM struct {
+type Meter struct {
 	Client *http.Client
-	URL    string
+	Addr   string
 }
 
-type Shelly3EMData struct {
+type MeterData struct {
 	EMeters []struct {
 		Current       float64 `json:"current"`
 		IsValid       bool    `json:"is_valid"`
@@ -65,8 +66,17 @@ type Shelly3EMData struct {
 }
 
 // Read returns the whole Shelly3EMData status update from the Shelly 3EM.
-func (s Shelly3EM) Read() (*Shelly3EMData, error) {
-	req, _ := http.NewRequest(http.MethodGet, s.URL+"/status", nil)
+func (s Meter) Read() (*MeterData, error) {
+	url := url.URL{
+		Scheme: "http",
+		Host:   s.Addr,
+		Path:   "/status",
+	}
+
+	req, err := http.NewRequest(http.MethodGet, url.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct request: %w", err)
+	}
 	resp, err := s.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from shelly device: %w", err)
@@ -80,7 +90,7 @@ func (s Shelly3EM) Read() (*Shelly3EMData, error) {
 	// we expect no valid response larger than 1mb
 	bodyReader := io.LimitReader(resp.Body, 1024*1024)
 
-	data := new(Shelly3EMData)
+	data := new(MeterData)
 	d := json.NewDecoder(bodyReader)
 	err = d.Decode(data)
 	if err != nil {

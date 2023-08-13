@@ -7,6 +7,11 @@ The author and the project are not affiliated with the Victron Company. The bran
 only in educational context. Everything here is shared for educational purpose only and 
 for use at your own risk only.
 
+## Code structure
+
+- `cmd/` commands/servers/entrypoints
+- `pkg/` potentially re-usable packages.
+
 ## Usage
 
 Interactive mode:
@@ -52,12 +57,9 @@ Configure NixOS Module:
     enable = true;
     maxInverter = 120;
     maxInverterPeak = 800;
-    shellyUrl = "http://shellyem3-.1.localnet.cc";
-    consumer = [{
-      url = "shelly1://shellyplus1pm-/";
-      power = 350;
-      delaySec = 5;
-    }];
+    shellyEM3 = "http://shellyem3-.1.localnet.cc";
   };
 }
 ```
+
+

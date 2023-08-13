@@ -9,16 +9,17 @@ import (
 	"time"
 )
 
-type Shelly1 struct {
+type Relay struct {
 	Client *http.Client
 	Addr   string
+	Number int
 }
 
-func (s *Shelly1) Set(state bool) error {
+func (r Relay) Set(state bool) error {
 	url := url.URL{
 		Scheme: "http",
-		Host:   s.Addr,
-		Path:   fmt.Sprintf("/relay/%v", 0),
+		Host:   r.Addr,
+		Path:   fmt.Sprintf("/relay/%v", r.Number),
 	}
 	if state {
 		url.RawQuery = "turn=on"
@@ -31,7 +32,7 @@ func (s *Shelly1) Set(state bool) error {
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	resp, err := s.Client.Do(req)
+	resp, err := r.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("shelly request failed: %w", err)
 	}
@@ -42,10 +43,10 @@ func (s *Shelly1) Set(state bool) error {
 	return nil
 }
 
-func (s *Shelly1) Get() (bool, error) {
+func (r Relay) Get() (bool, error) {
 	url := url.URL{
 		Scheme: "http",
-		Host:   s.Addr,
+		Host:   r.Addr,
 		Path:   fmt.Sprintf("/relay/%v", 0),
 	}
 
@@ -54,7 +55,7 @@ func (s *Shelly1) Get() (bool, error) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	resp, err := s.Client.Do(req)
+	resp, err := r.Client.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("shelly request failed: %w", err)
 	}
@@ -72,4 +73,17 @@ func (s *Shelly1) Get() (bool, error) {
 	}
 
 	return doc.Ison, nil
+}
+
+func MakeMeteredRelay() {
+}
+
+func (r Relay) WithMeter() MeterRelay {
+	return MeterRelay{
+		Relay: r,
+		Meter: Meter{
+			Client: r.Client,
+			Addr:   r.Addr,
+		},
+	}
 }

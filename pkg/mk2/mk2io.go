@@ -3,14 +3,16 @@ package mk2
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/goburrow/serial"
-	"github.com/rs/zerolog/log"
+	"golang.org/x/exp/slog"
 
+	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
@@ -90,7 +92,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 					}
 					return
 				}
-				log.Trace().Hex("frame.data", frame).Msg("dropping while waiting for response")
+				slog.Debug("dropping while waiting for response", slog.Any("frame.data", frame))
 			case <-done: // timeout
 				return
 			}
@@ -100,7 +102,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 	select {
 	case frame := <-response:
 		return frame, nil
-	case <-time.After(time.Second * 2):
+	case <-timemock.After(time.Second * 2):
 		return nil, errors.New("WriteAndReadFrame timed out waiting for response")
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -145,14 +147,14 @@ func (r *IO) StartReader() error {
 				}
 			case f := <-frames:
 				if len(f) == 8 && f[2] == 'V' {
-					log.Trace().Hex("data", f[2:]).Msgf("received broadcast frame 'V'")
+					slog.Debug("received broadcast frame 'V'", slog.Any("data", f[2:]))
 				} else {
-					log.Debug().Hex("data", f).Msgf("received %v bytes", len(f))
+					slog.Debug("received bytes", slog.Any("data", f), slog.Int("len", len(f)))
 					for _, l := range listeners {
 						select {
 						case l <- f:
-						case <-time.After(time.Millisecond * 100):
-							log.Warn().Msg("timeout signalling listener")
+						case <-timemock.After(time.Millisecond * 100):
+							slog.Warn("timeout signalling listener")
 						}
 					}
 				}
@@ -172,16 +174,15 @@ func (r *IO) StartReader() error {
 		for r.running {
 			n, err := r.input.Read(frameBuf)
 			if err != nil {
-				log.Warn().Msgf("Error reading: %v", err)
+				slog.Warn(fmt.Sprintf("Error reading: %v", err))
 				continue
 			}
 			if n == 0 {
 				continue
 			}
-			log.Trace().Hex("data", frameBuf[0:n]).Msgf("Read %v bytes", n)
+			slog.Debug(fmt.Sprintf("Read %v bytes", n), slog.Any("data", frameBuf[0:n]))
 			_, _ = scannerBuffer.Write(frameBuf[0:n])
-
-			log.Trace().Hex("scannerBuf", scannerBuffer.Bytes()).Msg("buffer")
+			slog.Debug("buffer", slog.Any("scannerBufHex", hex.EncodeToString(scannerBuffer.Bytes())))
 
 			if scannerBuffer.Len() == 0 {
 				continue
@@ -193,13 +194,13 @@ func (r *IO) StartReader() error {
 
 			// wait for at least 9 bytes in buffer before trying to sync
 			for !synchronized && scannerBuffer.Len() >= 9 {
-				log.Debug().Bool("synchronized", synchronized).Msg("re-syncing")
+				slog.Debug("re-syncing", slog.Bool("synchronized", synchronized))
 				if scannerBuffer.Bytes()[1] != 0xff {
 					_, _ = scannerBuffer.ReadByte()
 				} else if length := scannerBuffer.Bytes()[0]; scannerBuffer.Len() < int(length) {
 					_, _ = scannerBuffer.ReadByte()
 				} else if vebus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
-					log.Debug().Hex("checksum", scannerBuffer.Bytes()).Msg("synchronized")
+					slog.Debug("synchronized", slog.Any("checksum", scannerBuffer.Bytes()))
 					synchronized = true
 					// to wait for sync  before returning from StartReader
 					waitOnce.Do(func() { close(wait) })
@@ -218,7 +219,7 @@ func (r *IO) StartReader() error {
 
 			length := scannerBuffer.Bytes()[0]
 			if scannerBuffer.Bytes()[1] != 0xff {
-				log.Warn().Msgf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1])
+				slog.Warn(fmt.Sprintf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1]))
 				synchronized = false
 				scannerBuffer.Reset()
 				continue
@@ -230,7 +231,8 @@ func (r *IO) StartReader() error {
 
 			potentialFrame := scannerBuffer.Bytes()[0 : length+2]
 			if cksum := vebus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
-				log.Warn().Msgf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync", cksum, potentialFrame[length+1])
+				slog.Warn(fmt.Sprintf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync",
+					cksum, potentialFrame[length+1]))
 				synchronized = false
 				scannerBuffer.Reset()
 				continue
@@ -244,7 +246,7 @@ func (r *IO) StartReader() error {
 			case frames <- f:
 			}
 		}
-		log.Debug().Msg("reader exits")
+		slog.Debug("reader exits")
 	}()
 
 	select {
@@ -252,7 +254,7 @@ func (r *IO) StartReader() error {
 		return nil
 	case <-r.signalShutdown: // shutdown during init
 		return nil
-	case <-time.After(time.Second * 50): // timeout
+	case <-timemock.After(time.Second * 50): // timeout
 		r.Shutdown()
 		return errors.New("could not do initial sync")
 	}
@@ -264,7 +266,7 @@ func (r *IO) Write(data []byte) {
 	if err != nil {
 		panic(err) // todo
 	}
-	log.Debug().Hex("data", data).Msgf("sent %v bytes", n)
+	slog.Debug("sent bytes", slog.Int("len", n), slog.Any("data", data))
 }
 
 func (r *IO) Close(l chan []byte) {
@@ -280,10 +282,10 @@ func (r *IO) Close(l chan []byte) {
 // Shutdown initiates stop reading.
 // Call Wait() to make sure shutdown is completed.
 func (r *IO) Shutdown() {
-	log.Debug().Msg("try shutdown")
+	slog.Debug("try shutdown")
 	r.commandMutex.Lock()
 	if r.running {
-		log.Debug().Msg("trigger shutdown")
+		slog.Debug("trigger shutdown")
 		close(r.signalShutdown)
 		r.running = false
 	}
@@ -301,7 +303,7 @@ func (r *IO) newListenChannel() chan []byte {
 }
 
 func (r *IO) UpgradeHighSpeed() error {
-	time.Sleep(time.Millisecond * 100)
+	timemock.Sleep(time.Millisecond * 100)
 
 	n, err := r.input.Write([]byte{0x02, 0xff, 0x4e, 0xb1})
 	if err != nil {
@@ -311,7 +313,7 @@ func (r *IO) UpgradeHighSpeed() error {
 		return fmt.Errorf("failed magic high-speed sequence: incomplete write")
 	}
 
-	time.Sleep(time.Millisecond * 50)
+	timemock.Sleep(time.Millisecond * 50)
 
 	err = r.SetBaudHigh()
 	if err != nil {
@@ -326,7 +328,7 @@ func (r *IO) UpgradeHighSpeed() error {
 		return fmt.Errorf("failed write UUUUU: incomplete write")
 	}
 
-	time.Sleep(time.Millisecond * 100)
+	timemock.Sleep(time.Millisecond * 100)
 
 	return nil
 }

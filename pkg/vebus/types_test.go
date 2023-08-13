@@ -49,8 +49,9 @@ func TestChecksum(t *testing.T) {
 	assert.Equal(t, byte(0xac), Checksum([]byte{0x02, 0xff, 'S'}))
 	assert.Equal(t, byte(0x94), Checksum([]byte{7, 255, 86, 36, 219, 17, 0, 0}))
 	assert.Equal(t, byte(0x52), Checksum([]byte{7, 255, 86, 36, 219, 17, 0, 66}))
-
 	assert.Equal(t, byte(160), Checksum([]byte{5, 255, 87, 5, 0, 0}))
+	assert.Equal(t, byte(0x94), Checksum([]byte{0x7, 0xff, 'V', '$', 0xdb, 0x11, 0x00, 0x00}))
+	assert.Equal(t, byte(0x01), Checksum([]byte{0x7, 0xff, 'W', 0x85, 0xff, 0xfe, 0xc6, 0x5a}))
 }
 
 func TestVeCommandFrame_Marshall(t *testing.T) {

@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"golang.org/x/exp/slog"
 
-	"github.com/yvesf/ve-ctrl-tool/backoff"
-	"github.com/yvesf/ve-ctrl-tool/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/backoff"
+	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
@@ -53,7 +54,7 @@ func init() {
 			help:    "reset requests sends \"R\" to request a device reset",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
 				_, _ = vebus.CommandR.Frame().WriteAndRead(ctx, adapter)
-				time.Sleep(time.Second * 1)
+				timemock.Sleep(time.Second * 1)
 				println("reset finished")
 				return nil
 			},
@@ -287,7 +288,7 @@ func init() {
 					}
 					select {
 					case <-childCtx.Done():
-					case <-time.After(time.Millisecond * 500):
+					case <-timemock.After(time.Millisecond * 500):
 					}
 
 					var UInverterRMS, IInverterRMS uint16
@@ -296,18 +297,18 @@ func init() {
 					UInverterRMS, IInverterRMS, err = adapter.CommandReadRAMVarUnsigned16(ctx,
 						vebus.RAMIDUInverterRMS, vebus.RAMIDIINverterRMS)
 					if err != nil {
-						log.Error().Msgf("voltage access UInverterRMS failed: %v", err)
+						slog.Error("voltage access UInverterRMS failed", slog.Any("err", err))
 						goto handleError
 					}
 					InverterPower14, OutputPower, err = adapter.CommandReadRAMVarSigned16(ctx,
 						vebus.RAMIDInverterPower1, vebus.RAMIDOutputPower)
 					if err != nil {
-						log.Error().Msgf("voltage access InverterPower14 failed: %v", err)
+						slog.Error("voltage access InverterPower14 failed", slog.Any("err", err))
 						goto handleError
 					}
 					UBattery, IBattery, err = adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDUBatRMS, vebus.RAMIDIBat)
 					if err != nil {
-						log.Error().Msgf("voltage access InverterPower14 failed: %v", err)
+						slog.Error("voltage access InverterPower14 failed", slog.Any("err", err))
 						goto handleError
 					}
 
@@ -326,17 +327,17 @@ func init() {
 					if !next {
 						break
 					}
-					log.Info().Float64("seconds", sleepDuration.Seconds()).Msg("sleep after error")
+					slog.Info("sleep after error", slog.Float64("seconds", sleepDuration.Seconds()))
 					select {
 					case <-childCtx.Done():
-					case <-time.After(sleepDuration):
+					case <-timemock.After(sleepDuration):
 					}
 				}
 
-				log.Info().Msg("reset ESS to 0")
+				slog.Info("reset ESS to 0")
 				err = mk2Ess.SetpointSet(ctx, 0)
 				if err != nil {
-					log.Error().Err(err).Msg("failed to reset ESS to 0")
+					slog.Error("failed to reset ESS to 0", slog.Any("err", err))
 				}
 
 				return nil

@@ -10,12 +10,12 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/google/shlex"
+	"github.com/mattn/go-shellwords"
 	"github.com/peterh/liner"
-	"github.com/rs/zerolog/log"
+	"golang.org/x/exp/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/cmd"
-	"github.com/yvesf/ve-ctrl-tool/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 	// if arguments passed then execute as command
 	if args := flag.Args(); len(args) > 0 {
 		if err := execute(ctx, adapter, args); err != nil {
-			log.Error().Err(err).Msg("failed")
+			slog.Error("failed", slog.Any("err", err))
 		}
 		return
 	}
@@ -52,9 +52,9 @@ func main() {
 
 	for ctx.Err() == nil {
 		if response, err := line.Prompt("Mk2> "); err == nil {
-			inputTokens, err := shlex.Split(response)
+			inputTokens, err := shellwords.Parse(response)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to parse input")
+				slog.Error("failed to parse input", slog.Any("err", err))
 				continue
 			}
 			if len(inputTokens) == 0 {
@@ -80,10 +80,10 @@ func main() {
 			cancel()
 			break
 		} else {
-			log.Error().Err(err).Msg("error reading line")
+			slog.Error("error reading line", slog.Any("err", err))
 		}
 	}
-	log.Info().Msg("start shutdown")
+	slog.Info("start shutdown")
 }
 
 func execute(ctx context.Context, mk2 *mk2.Adapter, tokens []string) error {

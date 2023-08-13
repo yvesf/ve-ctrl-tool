@@ -1,5 +1,5 @@
 {
-  inputs.nixpkgs.url = "nixpkgs/nixos-22.11";
+  inputs.nixpkgs.url = "nixpkgs/nixos-23.05";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
@@ -8,7 +8,7 @@
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
-        vendorSha256 = "sha256-jNSn0uPxwzu5S/gGY3guOVdkQtFTqgsGx4dMbHcYdUA=";
+        vendorSha256 = "sha256-zwJ13y2B8NluCv8IQhQp6k08wedxb+Y2kKFO0k2SOVc=";
       };
     in
     flake-utils.lib.eachDefaultSystem
@@ -26,10 +26,10 @@
         {
           options.services.ve-ess-shelly = {
             enable = lib.mkEnableOption "the multiplus + shelly controller";
-            shellyUrl = lib.mkOption {
+            shellyEM3 = lib.mkOption {
               type = lib.types.str;
-              default = "http://10.1.0.210";
-              description = "Base URL of the shelly device";
+              default = "10.1.0.210";
+              description = "Address of the shelly EM 3 Energy Meter";
             };
             metricsAddress = lib.mkOption {
               type = lib.types.str;
@@ -53,35 +53,10 @@
               type = lib.types.nullOr lib.types.int;
               default = null;
             };
-            consumer = lib.mkOption {
-              type = lib.types.listOf (lib.types.submodule {
-                options = {
-                  url = lib.mkOption {
-                    type = lib.types.strMatching "shelly1://.+";
-                    description = "shelly1://host:port (port is optional)";
-                  };
-                  power = lib.mkOption {
-                    type = lib.types.ints.positive;
-                    description = "Assumed controlled power of this consumer";
-                  };
-                  delaySec = lib.mkOption {
-                    type = lib.types.ints.positive;
-                    description = "On/Off delay for this consumer";
-                  };
-                };
-              });
-              description = "Consumer in priority order";
-            };
-            consumerDelaySec = lib.mkOption {
-              type = lib.types.nullOr lib.types.int;
-              default = null;
-              description = "Consumer global delay seconds";
-            };
           };
           config =
             let
               cfg = config.services.ve-ess-shelly;
-              makeConsumerString = cfg: lib.concatStringsSep " " (map (c: "-consumer \"${toString c.power},${toString c.delaySec}s,${c.url}\"") cfg);
             in
             lib.mkIf cfg.enable {
               environment.systemPackages = [ ve-ctrl-tool ]; # add to system because it's handy for debugging
@@ -97,14 +72,11 @@
                       -metricsHTTP "${cfg.metricsAddress}" \
                       ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                       ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
-                      ${makeConsumerString cfg.consumer} \
-                      ${lib.optionalString (cfg.consumerDelaySec != null) "-consumerDelay ${toString cfg.gpioDelaySec}"} \
                       ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
-                      "${cfg.shellyUrl}"
+                      "${cfg.shellyEM3}"
                   '';
                   LockPersonality = true;
                   CapabilityBoundingSet = "";
-                  DeviceAllow = [ "${cfg.serialDevice}" "/dev/gpiochip0" ];
                   DynamicUser = true;
                   Group = "dialout";
                   MemoryDenyWriteExecute = true;

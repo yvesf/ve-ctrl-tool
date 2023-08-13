@@ -1,3 +1,4 @@
+// package main implements a simulator for a shelly em 3
 package main
 
 import (
@@ -17,8 +18,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/rs/zerolog/log"
 	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
+	"golang.org/x/exp/slog"
 )
 
 var (
@@ -32,7 +33,7 @@ func main() {
 	server := http.Server{
 		Addr: *flagListenAddr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var doc shelly.Shelly3EMData
+			var doc shelly.MeterData
 			doc.TotalPower = float64(atomic.LoadInt64(&currentValue))
 
 			v := doc.TotalPower / 3
@@ -57,7 +58,7 @@ func main() {
 			}
 			err := json.NewEncoder(w).Encode(doc)
 			if err != nil {
-				log.Error().AnErr("err", err).Msg("failed to encode json response")
+				slog.Error("failed to encode json response", slog.Any("err", err))
 			}
 		}),
 	}
@@ -85,18 +86,18 @@ func main() {
 		fmt.Printf("TotalPower=> ")
 		l, err := reader.ReadString('\n')
 		if errors.Is(err, io.EOF) {
-			log.Info().Msg("shutdown")
+			slog.Info("shutdown")
 			cancel()
 			break
 		}
 		if err != nil {
-			log.Error().AnErr("err", err).Msg("failed to read line")
+			slog.Error("failed to read line", slog.Any("err", err))
 			continue
 		}
 		l = strings.TrimSpace(l)
 		value, err := strconv.ParseInt(l, 10, 64)
 		if err != nil {
-			log.Error().AnErr("err", err).Msg("failed to parse line")
+			slog.Error("failed to parse line", slog.Any("err", err))
 			continue
 		}
 		atomic.StoreInt64(&currentValue, value)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,7 +13,7 @@ import (
 
 func TestShelly3EM(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		doc := Shelly3EMData{
+		doc := MeterData{
 			TotalPower: 1234,
 		}
 		v := doc.TotalPower / 3
@@ -39,7 +40,8 @@ func TestShelly3EM(t *testing.T) {
 	}))
 	defer server.Close()
 
-	shelly := Shelly3EM{URL: server.URL, Client: http.DefaultClient}
+	url, _ := url.Parse(server.URL)
+	shelly := Meter{Addr: url.Host, Client: http.DefaultClient}
 	d, err := shelly.Read()
 	require.NoError(t, err)
 

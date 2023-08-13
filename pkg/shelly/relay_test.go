@@ -21,7 +21,7 @@ func TestShelly1(t *testing.T) {
 
 	serverURL, _ := url.Parse(server.URL)
 
-	s := shelly.Shelly1{
+	s := shelly.Relay{
 		Addr:   serverURL.Host,
 		Client: http.DefaultClient,
 	}

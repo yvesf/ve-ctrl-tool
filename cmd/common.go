@@ -2,13 +2,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"net"
+	"net/http"
+	"os"
 	"time"
 
-	"github.com/yvesf/ve-ctrl-tool/mk2"
+	"github.com/bsm/openmetrics"
+	"github.com/bsm/openmetrics/omhttp"
+	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
+	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
-
-	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 var (
@@ -16,18 +22,39 @@ var (
 	flagLow          = flag.Bool("low", false, "Do not attempt to upgrade to 115200 baud")
 	flagVEAddress    = flag.Int("veAddress", 0, "Set other address than 0")
 	flagDebug        = flag.Bool("debug", false, "Set log level to debug")
-	flagTrace        = flag.Bool("trace", false, "Set log level to trace (overrides -debug)")
+	flagMetricsHTTP  = flag.String("metricsHTTP", "", "Address of a http server serving metrics under /metrics")
 )
 
 func CommonInit(ctx context.Context) *mk2.Adapter {
 	flag.Parse()
 
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	logLevel := slog.LevelInfo
 	if *flagDebug {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		logLevel = slog.LevelDebug
 	}
-	if *flagTrace {
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+	slog.SetDefault(slog.New(h))
+
+	// Metrics HTTP endpoint
+	if *flagMetricsHTTP != `` {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", omhttp.NewHandler(openmetrics.DefaultRegistry()))
+
+		var lc net.ListenConfig
+		ln, err := lc.Listen(ctx, "tcp", *flagMetricsHTTP)
+		if err != nil {
+			slog.Error("Listen on http failed", slog.String("addr", *flagMetricsHTTP))
+			os.Exit(1)
+		}
+
+		srv := &http.Server{Handler: mux}
+		go func() {
+			err := srv.Serve(ln)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("http server failed", slog.Any("err", err))
+				os.Exit(1)
+			}
+		}()
 	}
 
 	mk2, err := mk2.NewAdapter(*flagSerialDevice)
@@ -41,7 +68,7 @@ func CommonInit(ctx context.Context) *mk2.Adapter {
 		panic(err)
 	}
 	mk2.Write(vebus.CommandR.Frame().Marshal())
-	time.Sleep(time.Second * 1)
+	timemock.Sleep(time.Second * 1)
 	err = mk2.SetBaudLow()
 	if err != nil {
 		panic(err)
