@@ -8,11 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"golang.org/x/exp/slog"
+
 	"github.com/yvesf/ve-ctrl-tool/cmd"
 	"github.com/yvesf/ve-ctrl-tool/cmd/ve-ess-shelly/control"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
-	"golang.org/x/exp/slog"
 )
 
 func main() {
@@ -40,8 +41,8 @@ func main() {
 		panic(err)
 	}
 
-	shelly := shelly.Meter{Addr: flag.Args()[0], Client: http.DefaultClient}
-	m := &meter{Meter: shelly}
+	shelly := shelly.Gen2Meter{Addr: flag.Args()[0], Client: http.DefaultClient}
+	m := &meterReader{Meter: shelly}
 
 	var meterError error
 	go func() {

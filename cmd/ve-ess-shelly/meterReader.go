@@ -22,17 +22,16 @@ var metricShellyPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
 	Labels: []string{"meter"},
 })
 
-// meter implements the EnergyMeter interface using the Shelly 3 EM.
-
-type meter struct {
-	Meter           shelly.Meter
+// meterReader implements the EnergyMeter interface using the Shelly 3 EM.
+type meterReader struct {
+	Meter           shelly.Gen2Meter
 	lock            sync.Mutex
 	lastMeasurement control.PowerFlowWatt
 	time            time.Time
 }
 
 // Run blocks until context is concelled or error occurs.
-func (m *meter) Run(ctx context.Context) error {
+func (m *meterReader) Run(ctx context.Context) error {
 	const shellyReadInterval = time.Millisecond * 800
 
 	t := timemock.NewTimer(0)
@@ -62,13 +61,9 @@ func (m *meter) Run(ctx context.Context) error {
 			}
 			retry = 0
 
-			buf.Add(value.TotalPower)
+			buf.Add(value.TotalPower())
 			mean := buf.Mean()
 			metricShellyPower.With("totalMean").Set(mean)
-
-			for i, m := range value.EMeters {
-				metricShellyPower.With(fmt.Sprintf("meter%d", i)).Set(m.Power)
-			}
 
 			m.lock.Lock()
 			m.time = timemock.Now()
@@ -84,7 +79,7 @@ func (m *meter) Run(ctx context.Context) error {
 
 // LastMeasurement returns the last known power measurement. If time is Zero then value is invalid.
 // The "Run" function needs to run within a goroutine to update the value returned here.
-func (m *meter) LastMeasurement() (value control.PowerFlowWatt, time time.Time) {
+func (m *meterReader) LastMeasurement() (value control.PowerFlowWatt, time time.Time) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	return m.lastMeasurement, m.time

@@ -33,29 +33,9 @@ func main() {
 	server := http.Server{
 		Addr: *flagListenAddr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var doc shelly.MeterData
-			doc.TotalPower = float64(atomic.LoadInt64(&currentValue))
+			var doc shelly.Gen2MeterData
+			doc.TotalPower_ = float64(atomic.LoadInt64(&currentValue))
 
-			v := doc.TotalPower / 3
-			for i := 0; i < 3; i++ {
-				doc.EMeters = append(doc.EMeters, struct {
-					Current       float64 `json:"current"`
-					IsValid       bool    `json:"is_valid"`
-					PowerFactor   float64 `json:"pf"`
-					Power         float64 `json:"power"`
-					Total         float64 `json:"total"`
-					TotalReturned float64 `json:"total_returned"`
-					Voltage       float64 `json:"voltage"`
-				}{
-					Current:       v / 230,
-					IsValid:       true,
-					PowerFactor:   1.0,
-					Power:         v,
-					Total:         10,
-					TotalReturned: 10,
-					Voltage:       230,
-				})
-			}
 			err := json.NewEncoder(w).Encode(doc)
 			if err != nil {
 				slog.Error("failed to encode json response", slog.Any("err", err))

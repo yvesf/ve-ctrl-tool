@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/exp/slog"
+
 	"github.com/yvesf/ve-ctrl-tool/cmd/ve-ess-shelly/control"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
-	"golang.org/x/exp/slog"
 )
 
 var ()
