@@ -1,5 +1,5 @@
 {
-  inputs.nixpkgs.url = "nixpkgs/nixos-23.05";
+  inputs.nixpkgs.url = "nixpkgs/nixos-24.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
@@ -8,7 +8,7 @@
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
-        vendorSha256 = "sha256-zwJ13y2B8NluCv8IQhQp6k08wedxb+Y2kKFO0k2SOVc=";
+        vendorHash = "sha256-zwJ13y2B8NluCv8IQhQp6k08wedxb+Y2kKFO0k2SOVc=";
       };
     in
     flake-utils.lib.eachDefaultSystem
