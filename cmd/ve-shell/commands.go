@@ -236,7 +236,7 @@ func init() {
 				}
 				err = adapter.SetAddress(ctx, byte(addr))
 				if err != nil {
-					return fmt.Errorf("address failed: %w", err)
+					return fmt.Errorf("set-address failed: %w", err)
 				}
 				return nil
 			},
@@ -244,11 +244,11 @@ func init() {
 		{
 			command: "get-address",
 			args:    0,
-			help:    "address gets the current address (\"A\" command)",
+			help:    "get-address gets the current address (\"A\" command)",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
 				addr, err := adapter.GetAddress(ctx)
 				if err != nil {
-					return fmt.Errorf("address failed: %w", err)
+					return fmt.Errorf("get-address failed: %w", err)
 				}
 				fmt.Printf("address=0x%02x\n", addr)
 				return nil
