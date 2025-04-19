@@ -73,7 +73,7 @@ func Run(ctx context.Context, settings Settings, ess ESSControl, meter EnergyMet
 		lastSetpointValue          float64
 	)
 
-	pidC := pidctrl.NewPIDController(0.06, 0.06, 0.05)
+	pidC := pidctrl.NewPIDController(0.15, 0.1, 0.15)
 	pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverter))
 
 controlLoop:
@@ -81,7 +81,7 @@ controlLoop:
 		select {
 		case <-ctx.Done():
 			break controlLoop
-		case <-timemock.After(time.Millisecond * 50):
+		case <-timemock.After(time.Millisecond * 25):
 		}
 
 		m, lastMeasurement := meter.LastMeasurement()

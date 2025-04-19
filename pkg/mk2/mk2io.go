@@ -187,10 +187,6 @@ func (r *IO) StartReader() error {
 			if scannerBuffer.Len() == 0 {
 				continue
 			}
-			for scannerBuffer.Len() > 0 && scannerBuffer.Bytes()[0] == 0x00 {
-				// drop 0x00
-				_ = scannerBuffer.Next(1)
-			}
 
 			// wait for at least 9 bytes in buffer before trying to sync
 			for !synchronized && scannerBuffer.Len() >= 9 {
@@ -198,52 +194,58 @@ func (r *IO) StartReader() error {
 				if scannerBuffer.Bytes()[1] != 0xff {
 					_, _ = scannerBuffer.ReadByte()
 				} else if length := scannerBuffer.Bytes()[0]; scannerBuffer.Len() < int(length) {
-					_, _ = scannerBuffer.ReadByte()
+					break // read more data
 				} else if vebus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
-					slog.Debug("synchronized", slog.Any("checksum", scannerBuffer.Bytes()))
+					slog.Debug("synchronized", slog.Any("buffer", scannerBuffer.Bytes()))
 					synchronized = true
 					// to wait for sync  before returning from StartReader
 					waitOnce.Do(func() { close(wait) })
 
 					break
 				} else {
+					// drop byte, try again
 					_, _ = scannerBuffer.ReadByte()
 				}
 			}
 			if !synchronized {
-				continue
-			}
-			if scannerBuffer.Len() < 3 {
-				continue
+				continue // read more data
 			}
 
-			length := scannerBuffer.Bytes()[0]
-			if scannerBuffer.Bytes()[1] != 0xff {
-				slog.Warn(fmt.Sprintf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1]))
-				synchronized = false
-				scannerBuffer.Reset()
-				continue
-			}
+			for scannerBuffer.Len() >= 3 {
+				for scannerBuffer.Len() > 0 && scannerBuffer.Bytes()[0] == 0x00 {
+					// drop 0x00 bytes
+					_ = scannerBuffer.Next(1)
+				}
 
-			if scannerBuffer.Len() < int(length)+3 {
-				continue // fill buffer first
-			}
+				length := scannerBuffer.Bytes()[0]
+				if scannerBuffer.Bytes()[1] != 0xff {
+					slog.Warn(fmt.Sprintf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1]))
+					synchronized = false
+					scannerBuffer.Reset()
+					break
+				}
 
-			potentialFrame := scannerBuffer.Bytes()[0 : length+2]
-			if cksum := vebus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
-				slog.Warn(fmt.Sprintf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync",
-					cksum, potentialFrame[length+1]))
-				synchronized = false
-				scannerBuffer.Reset()
-				continue
-			}
+				if scannerBuffer.Len() < int(length+2) {
+					slog.Debug("buffer too small, wait for more data")
+					break
+				}
 
-			fullFrame := scannerBuffer.Next(int(length) + 2) // drop successful read data
-			f := fullFrame[:length+1]
+				potentialFrame := scannerBuffer.Bytes()[0 : length+2]
+				if cksum := vebus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
+					slog.Warn(fmt.Sprintf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync",
+						cksum, potentialFrame[length+1]))
+					synchronized = false
+					scannerBuffer.Reset()
+					break
+				}
 
-			select {
-			case <-r.signalShutdown:
-			case frames <- f:
+				fullFrame := scannerBuffer.Next(int(length) + 2) // drop successful read data
+				f := fullFrame[:length+1]
+
+				select {
+				case <-r.signalShutdown:
+				case frames <- f:
+				}
 			}
 		}
 		slog.Debug("reader exits")
