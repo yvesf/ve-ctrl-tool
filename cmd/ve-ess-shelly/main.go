@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/http"
 	"os"
@@ -51,7 +52,7 @@ func main() {
 	}()
 
 	err = control.Run(ctx, settings, inverter{adapter: mk2Ess}, m)
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("run failed", slog.Any("err", err))
 		os.Exit(1)
 	}

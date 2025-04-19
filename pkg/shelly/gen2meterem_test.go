@@ -13,9 +13,9 @@ import (
 )
 
 func TestGen2Meter(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		wr := bufio.NewWriter(w)
-		wr.WriteString(`{"id":0,` +
+		_, _ = wr.WriteString(`{"id":0,` +
 			`"a_current":0.951,"a_voltage":229.7,"a_act_power":136.7,"a_aprt_power":218.4,"a_pf":-0.73,` +
 			`"b_current":0.867,"b_voltage":230.5,"b_act_power":81.8,"b_aprt_power":199.8,"b_pf":-0.63,` +
 			`"c_current":5.495,"c_voltage":233.7,"c_act_power":836.4,"c_aprt_power":1282.3,"c_pf":-0.74,` +

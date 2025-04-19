@@ -11,8 +11,6 @@ import (
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
-var ()
-
 // inverter implements the ESSControl interface. It supports controlling the setpoint and gathering status information
 // on the Victron ESS via mk2.
 type inverter struct {

@@ -17,11 +17,11 @@ type Gen2MeterData struct {
 	// Sum of the active power on all phases.
 	// Positive values is power taken from the grid/uplink.
 	// Negative values is power injected to the grid/uplink.
-	TotalPower_ float64 `json:"total_act_power"`
+	TotalPowerFloat float64 `json:"total_act_power"`
 }
 
 func (d Gen2MeterData) TotalPower() float64 {
-	return d.TotalPower_
+	return d.TotalPowerFloat
 }
 
 // Read returns the whole Shelly3EMData status update from the Shelly 3EM.

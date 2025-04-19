@@ -12,9 +12,9 @@ import (
 )
 
 func TestGen1Meter(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		doc := Gen1MeterData{
-			TotalPower_: 1234,
+			TotalPowerFloat: 1234,
 		}
 		require.NoError(t, json.NewEncoder(w).Encode(doc))
 	}))

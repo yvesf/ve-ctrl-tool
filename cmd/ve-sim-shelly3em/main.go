@@ -32,9 +32,9 @@ func main() {
 
 	server := http.Server{
 		Addr: *flagListenAddr,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			var doc shelly.Gen2MeterData
-			doc.TotalPower_ = float64(atomic.LoadInt64(&currentValue))
+			doc.TotalPowerFloat = float64(atomic.LoadInt64(&currentValue))
 
 			err := json.NewEncoder(w).Encode(doc)
 			if err != nil {

@@ -149,9 +149,9 @@ controlLoop:
 			pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverter))
 		}
 
-		min, max := pidC.OutputLimits()
-		metricControlPIDMin.With().Set(min)
-		metricControlPIDMax.With().Set(max)
+		outMin, outMax := pidC.OutputLimits()
+		metricControlPIDMin.With().Set(outMin)
+		metricControlPIDMax.With().Set(outMax)
 	}
 
 	slog.Info("shutdown: reset ESS setpoint to 0")

@@ -38,7 +38,7 @@ func init() {
 			command: "state",
 			args:    0,
 			help:    "state (CommandGetSetDeviceState)",
-			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
+			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
 				state, subState, err := adapter.CommandGetSetDeviceState(ctx, mk2.DeviceStateRequestStateInquiry)
 				if err != nil {
 					return fmt.Errorf("state command failed: %w", err)
@@ -52,7 +52,7 @@ func init() {
 			command: "reset",
 			args:    0,
 			help:    "reset requests sends \"R\" to request a device reset",
-			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
+			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
 				_, _ = vebus.CommandR.Frame().WriteAndRead(ctx, adapter)
 				timemock.Sleep(time.Second * 1)
 				println("reset finished")
@@ -112,19 +112,19 @@ func init() {
 				if len(args) != 1 {
 					return fmt.Errorf("wrong no of args")
 				}
-				var ramIds []byte
+				var ramIDs []byte
 				for _, arg := range strings.Split(args[0], ",") {
 					v, err := strconv.ParseUint(arg, 10, 8)
 					if err != nil {
 						return fmt.Errorf("failed to parse ramid: %w", err)
 					}
-					ramIds = append(ramIds, byte(v))
+					ramIDs = append(ramIDs, byte(v))
 				}
-				if len(ramIds) == 1 {
-					ramIds = append(ramIds, 0)
+				if len(ramIDs) == 1 {
+					ramIDs = append(ramIDs, 0)
 				}
 
-				value0, value1, err := adapter.CommandReadRAMVarUnsigned16(ctx, ramIds[0], ramIds[1])
+				value0, value1, err := adapter.CommandReadRAMVarUnsigned16(ctx, ramIDs[0], ramIDs[1])
 				if err != nil {
 					return fmt.Errorf("read-ram command failed: %w", err)
 				}
@@ -216,7 +216,7 @@ func init() {
 			command: "voltage",
 			args:    0,
 			help:    "voltage shows voltage information from ram",
-			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
+			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
 				uBat, uInverter, err := adapter.CommandReadRAMVarUnsigned16(ctx, vebus.RAMIDUBat, vebus.RAMIDUInverterRMS)
 				if err != nil {
 					return fmt.Errorf("voltage access UInverterRMS failed: %w", err)
@@ -245,7 +245,7 @@ func init() {
 			command: "get-address",
 			args:    0,
 			help:    "get-address gets the current address (\"A\" command)",
-			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
+			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
 				addr, err := adapter.GetAddress(ctx)
 				if err != nil {
 					return fmt.Errorf("get-address failed: %w", err)

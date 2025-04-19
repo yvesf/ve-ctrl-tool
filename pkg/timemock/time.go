@@ -68,7 +68,7 @@ func Freeze(at time.Time) func() {
 			<-wakeupChan
 		}
 	}
-	NewTimer = func(d time.Duration) timer {
+	NewTimer = func(_ time.Duration) timer {
 		panic("not supported")
 	}
 

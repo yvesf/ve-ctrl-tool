@@ -17,11 +17,11 @@ type Gen1MeterData struct {
 	// TotalPower is signed integer that reflects the total consumption of the measurement point.
 	// Positive values is power taken from the grid/uplink.
 	// Negative values is power injected to the grid/uplink.
-	TotalPower_ float64 `json:"total_power"`
+	TotalPowerFloat float64 `json:"total_power"`
 }
 
 func (d Gen1MeterData) TotalPower() float64 {
-	return d.TotalPower_
+	return d.TotalPowerFloat
 }
 
 // Read returns the whole Shelly3EMData status update from the Shelly 3EM.

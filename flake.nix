@@ -18,7 +18,7 @@
           defaultPackage = packages.ve-ctrl-tool;
           devShell =
             with import nixpkgs { inherit system; }; mkShell {
-              packages = [ go_1_23 nixpkgs-fmt golangci-lint gofumpt ];
+              packages = [ go_1_23 nixpkgs-fmt golangci-lint golangci-lint-langserver gofumpt ];
             };
         }) // {
       nixosModule = { pkgs, config, lib, ... }:
