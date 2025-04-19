@@ -4,7 +4,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      packageDef = { buildGoModule }: buildGoModule {
+      packageDef = { buildGo123Module }: buildGo123Module {
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
@@ -18,7 +18,7 @@
           defaultPackage = packages.ve-ctrl-tool;
           devShell =
             with import nixpkgs { inherit system; }; mkShell {
-              packages = [ go nixpkgs-fmt golangci-lint gofumpt ];
+              packages = [ go_1_23 nixpkgs-fmt golangci-lint gofumpt ];
             };
         }) // {
       nixosModule = { pkgs, config, lib, ... }:
