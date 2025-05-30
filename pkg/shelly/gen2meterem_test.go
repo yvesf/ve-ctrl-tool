@@ -8,8 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/carlmjohnson/be"
 )
 
 func TestGen2Meter(t *testing.T) {
@@ -27,9 +26,9 @@ func TestGen2Meter(t *testing.T) {
 	url, _ := url.Parse(server.URL)
 	shelly := Gen2Meter{Addr: url.Host, Client: http.DefaultClient}
 	d, err := shelly.Read()
-	require.NoError(t, err)
+	be.NilErr(t, err)
 
-	assert.Equal(t, 1054.962, d.TotalPower())
+	be.Equal(t, 1054.962, d.TotalPower())
 }
 
 func ExampleGen2Meter() {

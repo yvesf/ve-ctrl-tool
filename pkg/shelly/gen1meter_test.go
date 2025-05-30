@@ -7,8 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/carlmjohnson/be"
 )
 
 func TestGen1Meter(t *testing.T) {
@@ -16,14 +15,13 @@ func TestGen1Meter(t *testing.T) {
 		doc := Gen1MeterData{
 			TotalPowerFloat: 1234,
 		}
-		require.NoError(t, json.NewEncoder(w).Encode(doc))
+		be.NilErr(t, json.NewEncoder(w).Encode(doc))
 	}))
 	defer server.Close()
 
 	url, _ := url.Parse(server.URL)
 	shelly := Gen1Meter{Addr: url.Host, Client: http.DefaultClient}
 	d, err := shelly.Read()
-	require.NoError(t, err)
-
-	assert.Equal(t, 1234.0, d.TotalPower())
+	be.NilErr(t, err)
+	be.Equal(t, 1234.0, d.TotalPower())
 }

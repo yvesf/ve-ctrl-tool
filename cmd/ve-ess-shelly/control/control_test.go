@@ -4,30 +4,31 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
+	"github.com/carlmjohnson/be"
 )
 
 type essMock struct {
-	mock.Mock
+	setpointSet func(context.Context, int16) error
+	stats       func(context.Context) (EssStats, error)
 }
 
 func (m *essMock) SetpointSet(ctx context.Context, value int16) error {
-	args := m.Called(ctx, value)
-	return args.Error(0)
+	return m.setpointSet(ctx, value)
 }
 
 func (m *essMock) Stats(ctx context.Context) (EssStats, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(EssStats), args.Error(1)
+	return m.stats(ctx)
 }
 
 func TestRun__exitOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	essMock := &essMock{}
-	essMock.On("SetpointSet", mock.Anything, int16(0)).Return(nil)
+	essMock.setpointSet = func(ctx context.Context, value int16) error {
+		be.Equal(t, 0, value)
+		return nil
+	}
 
 	err := Run(ctx, Settings{}, essMock, nil)
-	require.Equal(t, context.Canceled, err)
+	be.Equal(t, context.Canceled, err)
 }
