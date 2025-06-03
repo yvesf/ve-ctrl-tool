@@ -49,10 +49,6 @@
               type = lib.types.nullOr lib.types.int;
               default = null;
             };
-            maxInverterPeak = lib.mkOption {
-              type = lib.types.nullOr lib.types.int;
-              default = null;
-            };
           };
           config =
             let
@@ -72,7 +68,6 @@
                       -metricsHTTP "${cfg.metricsAddress}" \
                       ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                       ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
-                      ${lib.optionalString (cfg.maxInverterPeak != null) "-maxInverterPeak ${toString cfg.maxInverterPeak}"} \
                       "${cfg.shellyEM3}"
                   '';
                   LockPersonality = true;

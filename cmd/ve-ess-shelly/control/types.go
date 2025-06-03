@@ -80,8 +80,6 @@ type Settings struct {
 	MaxWattCharge int
 	// MaxWattInverter [Watt] is the maximum power to generate (positive ESS setpoint).
 	MaxWattInverter int
-	// MaxWattInverterPeak [Watt] is the maximum power to generate for a short peak time window.
-	MaxWattInverterPeak int
 	// PowerOffset [Watt] is a constant offset applied to the metered power flow.
 	PowerOffset int
 	// SetpointRounding [Watt] is applied on the calculated setpoint to also lower the amount of ESS Communication.

@@ -56,7 +56,6 @@ Configure NixOS Module:
   services.ve-ess-shelly = {
     enable = true;
     maxInverter = 120;
-    maxInverterPeak = 800;
     shellyEM3 = "http://shellyem3-.1.localnet.cc";
   };
 }

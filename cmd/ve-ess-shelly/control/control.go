@@ -58,19 +58,13 @@ var (
 // Run starts the control loop.
 // The control loop is blocking and can be stopped by cancelling ctx.
 func Run(ctx context.Context, settings Settings, ess ESSControl, meter EnergyMeter) error {
-	const (
-		// inverterPeakMaximumTimeWindow is the duration while the inverter may produce a higher peak power.
-		inverterPeakMaximumTimeWindow = time.Minute * 5
-	)
 	// shared Variables
 	var (
-		setpointSet Measurement
-		// timeLastInverterProduction is when the inverter last time generated >= inverterPeakMinimumProduction watt
-		timeLastInverterProduction time.Time
-		pidLastUpdateAt            time.Time
-		lastStatsUpdateAt          time.Time
-		lastSetpointWrittenAt      time.Time
-		lastSetpointValue          float64
+		setpointSet           Measurement
+		pidLastUpdateAt       time.Time
+		lastStatsUpdateAt     time.Time
+		lastSetpointWrittenAt time.Time
+		lastSetpointValue     float64
 	)
 
 	pidC := pidctrl.NewPIDController(0.15, 0.1, 0.15)
@@ -139,15 +133,8 @@ controlLoop:
 			metricMultiplusInverterPower.With().Set(float64(stats.InverterPower))
 		}
 
-		// control inverter limits, allow peak power during shorter time.
-		if v, valid := setpointSet.Get(); valid && v.ConsumptionNegative() >= float64(settings.MaxWattCharge)/2.0 {
-			// if production was higher than half of max charge rate, take a note
-			timeLastInverterProduction = timemock.Now()
-			pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverterPeak))
-		} else if timemock.Now().Sub(timeLastInverterProduction) > inverterPeakMaximumTimeWindow {
-			// if we are in production-mode for longer than inverterPeakMaximumTimeWindow, reduce from peak to normal rate
-			pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverter))
-		}
+		// set PID output limits.
+		pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverter))
 
 		outMin, outMax := pidC.OutputLimits()
 		metricControlPIDMin.With().Set(outMin)

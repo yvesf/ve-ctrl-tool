@@ -25,8 +25,6 @@ func main() {
 		"Maximum ESS Setpoint for charging (negative setpoint)")
 	flag.IntVar(&settings.MaxWattInverter, "maxInverter", 60.0,
 		"Maximum ESS Setpoint for inverter (positive setpoint)")
-	flag.IntVar(&settings.MaxWattInverterPeak, "maxInverterPeak", 800,
-		"Maximum ESS Setpoint for inverter (positive setpoint) for peaks after recent peak charging phase")
 	flag.IntVar(&settings.PowerOffset, "offset", -4.0,
 		"Power measurement offset")
 	flag.IntVar(&settings.SetpointRounding, "setpointRounding", 3.0,
