@@ -3,9 +3,9 @@ package mk2
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
-	"golang.org/x/exp/slog"
 )
 
 // AdapterWithESS is wraps Adapter and adds function to configure the AdapterWithESS Assistant.

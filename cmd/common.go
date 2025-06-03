@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
-	"golang.org/x/exp/slog"
 )
 
 var (

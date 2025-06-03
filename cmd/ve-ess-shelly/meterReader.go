@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/yvesf/ve-ctrl-tool/pkg/ringbuf"
 	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
 	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
-	"golang.org/x/exp/slog"
 )
 
 var metricShellyPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{

@@ -4,12 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/backoff"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"

@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +20,6 @@ import (
 	"syscall"
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
-	"golang.org/x/exp/slog"
 )
 
 var (
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(),
-		os.Interrupt, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGINT)
+		syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGINT)
 	defer cancel()
 
 	go func() {

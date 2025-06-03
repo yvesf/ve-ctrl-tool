@@ -3,13 +3,13 @@ package control
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
 	"github.com/bsm/openmetrics"
 	"github.com/felixge/pidctrl"
 	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
-	"golang.org/x/exp/slog"
 )
 
 var (

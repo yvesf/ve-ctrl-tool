@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"golang.org/x/exp/slog"
+	"log/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )

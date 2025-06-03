@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/goburrow/serial"
-	"golang.org/x/exp/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"

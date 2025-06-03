@@ -6,13 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 
 	"github.com/mattn/go-shellwords"
 	"github.com/peterh/liner"
-	"golang.org/x/exp/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/cmd"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"

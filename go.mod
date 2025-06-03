@@ -1,8 +1,8 @@
 module github.com/yvesf/ve-ctrl-tool
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.23.6
+toolchain go1.24.3
 
 require (
 	github.com/bsm/openmetrics v0.3.1
@@ -11,7 +11,6 @@ require (
 	github.com/goburrow/serial v0.1.0
 	github.com/mattn/go-shellwords v1.0.12
 	github.com/peterh/liner v1.2.2
-	golang.org/x/exp v0.0.0-20250530174510-65e920069ea6
 )
 
 require (

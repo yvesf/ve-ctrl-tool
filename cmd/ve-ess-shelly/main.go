@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"golang.org/x/exp/slog"
 
 	"github.com/yvesf/ve-ctrl-tool/cmd"
 	"github.com/yvesf/ve-ctrl-tool/cmd/ve-ess-shelly/control"
