@@ -69,6 +69,7 @@ type EssStats struct {
 type ESSControl interface {
 	Stats(ctx context.Context) (EssStats, error)
 	SetpointSet(ctx context.Context, value int16) error
+	SetZero(ctx context.Context) error
 }
 
 type EnergyMeter interface {

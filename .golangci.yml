@@ -1,16 +1,35 @@
+version: "2"
 linters:
-  enable: # additional linters
-    - errorlint
+  enable:
     - bodyclose
+    - errorlint
     - godot
-    - gofmt
-    - gofumpt
-    - goimports
     - lll
     - nakedret
     - predeclared
     - revive
     - staticcheck
-    - stylecheck
     - usestdlibvars
     - whitespace
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

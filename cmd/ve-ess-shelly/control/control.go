@@ -11,40 +11,16 @@ import (
 	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 )
 
-var (
-	metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
-		Name: "ess_pid_input",
-		Unit: "watt",
-		Help: "The current input for the PID controller",
-	})
-	metricMultiplusSetpoint = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
-		Name: "ess_multiplus_setpoint",
-		Unit: "watt",
-		Help: "The setpoint written to the multiplus",
-	})
-	metricMultiplusIBat = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
-		Name: "ess_multiplus_ibat",
-		Unit: "ampere",
-		Help: "Current of the multiplus battery, negative=discharge",
-	})
-	metricMultiplusUBat = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
-		Name: "ess_multiplus_ubat",
-		Unit: "voltage",
-		Help: "Voltage of the multiplus battery",
-	})
-	metricMultiplusInverterPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
-		Name: "ess_multiplus_inverter_power",
-		Unit: "watt",
-		Help: "Ram InverterPower1",
-	})
-)
+var metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
+	Name: "ess_pid_input",
+	Unit: "watt",
+	Help: "The current input for the PID controller",
+})
 
 // Run starts the control loop.
 // The control loop is blocking and can be stopped by cancelling ctx.
 func Run(ctx context.Context, settings Settings, ess ESSControl, meter EnergyMeter) error {
-	// shared Variables
 	var (
-		setpointSet           Measurement
 		pidLastUpdateAt       time.Time
 		lastStatsUpdateAt     time.Time
 		lastSetpointWrittenAt time.Time
@@ -65,8 +41,10 @@ controlLoop:
 		m, lastMeasurement := meter.LastMeasurement()
 		if lastMeasurement.IsZero() || timemock.Now().Sub(lastMeasurement) > time.Second*10 {
 			slog.Info("no energy meter information", slog.Time("lastMeasurement", lastMeasurement))
-			setpointSet.SetInvalid()
-			metricMultiplusSetpoint.With().Reset(openmetrics.GaugeOptions{})
+			err := ess.SetZero(ctx)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -87,17 +65,18 @@ controlLoop:
 		if controllerOut > -1*float64(settings.ZeroPointWindow) && controllerOut < float64(settings.ZeroPointWindow) {
 			controllerOut = 0
 		}
-		setpointSet.Set(ConsumptionPositive(controllerOut))
 
-		// only update the ESS if value is different from last update or 15 seconds passed.
-		// We have to write about every 30s to not let the ESS shutdown for safety reasons.
+		// only update the ESS if
+		// - value is different from last update.
+		// - the value haven't been updated yet.
+		// - 15 seconds passed. We have to write about every 30s to not let the ESS shutdown for safety reasons.
 		if controllerOut != lastSetpointValue ||
-			lastSetpointWrittenAt.IsZero() || timemock.Now().Sub(lastSetpointWrittenAt) > time.Second*20 {
+			lastSetpointWrittenAt.IsZero() ||
+			timemock.Now().Sub(lastSetpointWrittenAt) > time.Second*20 {
 			err := ess.SetpointSet(ctx, int16(controllerOut))
 			if err != nil {
 				return fmt.Errorf("failed to write ESS setpoint: %w", err)
 			}
-			metricMultiplusSetpoint.With().Set(float64(controllerOut))
 
 			lastSetpointValue = controllerOut
 			lastSetpointWrittenAt = timemock.Now()
@@ -105,14 +84,11 @@ controlLoop:
 
 		// collect statistics only every 10 seconds.
 		if lastStatsUpdateAt.IsZero() || timemock.Now().Sub(lastStatsUpdateAt) > time.Second*10 {
-			stats, err := ess.Stats(ctx)
+			_, err := ess.Stats(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to read ESS stats: %w", err)
 			}
 			lastStatsUpdateAt = timemock.Now()
-			metricMultiplusIBat.With().Set(float64(stats.IBat))
-			metricMultiplusUBat.With().Set(float64(stats.UBat))
-			metricMultiplusInverterPower.With().Set(float64(stats.InverterPower))
 		}
 	}
 

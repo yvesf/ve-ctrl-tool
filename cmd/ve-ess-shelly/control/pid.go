@@ -35,10 +35,10 @@ func NewPIDWithMetrics(p, i, d float64) PIDWithMetrics {
 	}
 }
 
-func (p PIDWithMetrics) SetOutputLimits(min, max float64) {
-	p.PIDController.SetOutputLimits(min, max)
-	metricControlPIDMin.With().Set(min)
-	metricControlPIDMax.With().Set(max)
+func (p PIDWithMetrics) SetOutputLimits(valueMin, valueMax float64) {
+	p.PIDController.SetOutputLimits(valueMin, valueMax)
+	metricControlPIDMin.With().Set(valueMin)
+	metricControlPIDMax.With().Set(valueMax)
 }
 
 func (p PIDWithMetrics) UpdateDuration(value float64, duration time.Duration) float64 {

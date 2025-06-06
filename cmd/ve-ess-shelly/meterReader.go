@@ -44,7 +44,7 @@ func (m *meterReader) Run(ctx context.Context) error {
 
 	for {
 		select {
-		case <-t.Timer.C:
+		case <-t.C:
 			value, err := m.Meter.Read()
 			if err != nil {
 				retry++
