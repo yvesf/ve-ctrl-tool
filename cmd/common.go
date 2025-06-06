@@ -13,7 +13,6 @@ import (
 	"github.com/bsm/openmetrics"
 	"github.com/bsm/openmetrics/omhttp"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
-	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
@@ -68,7 +67,7 @@ func CommonInit(ctx context.Context) *mk2.Adapter {
 		panic(err)
 	}
 	mk2.Write(vebus.CommandR.Frame().Marshal())
-	timemock.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 1)
 	err = mk2.SetBaudLow()
 	if err != nil {
 		panic(err)

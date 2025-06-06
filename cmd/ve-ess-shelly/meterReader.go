@@ -12,7 +12,6 @@ import (
 	"github.com/yvesf/ve-ctrl-tool/pkg/backoff"
 	"github.com/yvesf/ve-ctrl-tool/pkg/ringbuf"
 	"github.com/yvesf/ve-ctrl-tool/pkg/shelly"
-	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 )
 
 var metricShellyPower = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
@@ -34,7 +33,7 @@ type meterReader struct {
 func (m *meterReader) Run(ctx context.Context) error {
 	const shellyReadInterval = time.Millisecond * 800
 
-	t := timemock.NewTimer(0)
+	t := time.NewTimer(0)
 	defer slog.Debug("shelly go-routine done")
 	defer t.Stop()
 
@@ -66,7 +65,7 @@ func (m *meterReader) Run(ctx context.Context) error {
 			metricShellyPower.With("totalMean").Set(mean)
 
 			m.lock.Lock()
-			m.time = timemock.Now()
+			m.time = time.Now()
 			m.lastMeasurement = control.ConsumptionPositive(mean)
 			m.lock.Unlock()
 

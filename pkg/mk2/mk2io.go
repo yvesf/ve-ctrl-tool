@@ -12,7 +12,6 @@ import (
 
 	"github.com/goburrow/serial"
 
-	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
@@ -102,7 +101,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 	select {
 	case frame := <-response:
 		return frame, nil
-	case <-timemock.After(time.Second * 2):
+	case <-time.After(time.Second * 2):
 		return nil, errors.New("WriteAndReadFrame timed out waiting for response")
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -153,7 +152,7 @@ func (r *IO) StartReader() error {
 					for _, l := range listeners {
 						select {
 						case l <- f:
-						case <-timemock.After(time.Millisecond * 100):
+						case <-time.After(time.Millisecond * 100):
 							slog.Warn("timeout signalling listener")
 						}
 					}
@@ -256,7 +255,7 @@ func (r *IO) StartReader() error {
 		return nil
 	case <-r.signalShutdown: // shutdown during init
 		return nil
-	case <-timemock.After(time.Second * 50): // timeout
+	case <-time.After(time.Second * 50): // timeout
 		r.Shutdown()
 		return errors.New("could not do initial sync")
 	}
@@ -305,7 +304,7 @@ func (r *IO) newListenChannel() chan []byte {
 }
 
 func (r *IO) UpgradeHighSpeed() error {
-	timemock.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 100)
 
 	n, err := r.input.Write([]byte{0x02, 0xff, 0x4e, 0xb1})
 	if err != nil {
@@ -315,7 +314,7 @@ func (r *IO) UpgradeHighSpeed() error {
 		return fmt.Errorf("failed magic high-speed sequence: incomplete write")
 	}
 
-	timemock.Sleep(time.Millisecond * 50)
+	time.Sleep(time.Millisecond * 50)
 
 	err = r.SetBaudHigh()
 	if err != nil {
@@ -330,7 +329,7 @@ func (r *IO) UpgradeHighSpeed() error {
 		return fmt.Errorf("failed write UUUUU: incomplete write")
 	}
 
-	timemock.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 100)
 
 	return nil
 }

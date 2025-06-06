@@ -12,7 +12,6 @@ import (
 
 	"github.com/yvesf/ve-ctrl-tool/pkg/backoff"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
-	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
 
@@ -53,7 +52,7 @@ func init() {
 			help:    "reset requests sends \"R\" to request a device reset",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
 				_, _ = vebus.CommandR.Frame().WriteAndRead(ctx, adapter)
-				timemock.Sleep(time.Second * 1)
+				time.Sleep(time.Second * 1)
 				println("reset finished")
 				return nil
 			},
@@ -287,7 +286,7 @@ func init() {
 					}
 					select {
 					case <-childCtx.Done():
-					case <-timemock.After(time.Millisecond * 500):
+					case <-time.After(time.Millisecond * 500):
 					}
 
 					var UInverterRMS, IInverterRMS uint16
@@ -329,7 +328,7 @@ func init() {
 					slog.Info("sleep after error", slog.Float64("seconds", sleepDuration.Seconds()))
 					select {
 					case <-childCtx.Done():
-					case <-timemock.After(sleepDuration):
+					case <-time.After(sleepDuration):
 					}
 				}
 

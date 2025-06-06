@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bsm/openmetrics"
-	"github.com/yvesf/ve-ctrl-tool/pkg/timemock"
 )
 
 var metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
@@ -35,11 +34,11 @@ controlLoop:
 		select {
 		case <-ctx.Done():
 			break controlLoop
-		case <-timemock.After(time.Millisecond * 25):
+		case <-time.After(time.Millisecond * 25):
 		}
 
 		m, lastMeasurement := meter.LastMeasurement()
-		if lastMeasurement.IsZero() || timemock.Now().Sub(lastMeasurement) > time.Second*10 {
+		if lastMeasurement.IsZero() || time.Now().Sub(lastMeasurement) > time.Second*10 {
 			slog.Info("no energy meter information", slog.Time("lastMeasurement", lastMeasurement))
 			err := ess.SetZero(ctx)
 			if err != nil {
@@ -52,11 +51,11 @@ controlLoop:
 		metricControlInput.With().Set(controllerInputM)
 
 		if pidLastUpdateAt.IsZero() {
-			pidLastUpdateAt = timemock.Now()
+			pidLastUpdateAt = time.Now()
 		}
 		// Take consumption negative to regulate to 0.
-		controllerOut := pidC.UpdateDuration(controllerInputM, timemock.Now().Sub(pidLastUpdateAt))
-		pidLastUpdateAt = timemock.Now()
+		controllerOut := pidC.UpdateDuration(controllerInputM, time.Now().Sub(pidLastUpdateAt))
+		pidLastUpdateAt = time.Now()
 
 		// round PID output to reduce the need for updating the setpoint for marginal changes.
 		controllerOut = math.Round(controllerOut/float64(settings.SetpointRounding)) * float64(settings.SetpointRounding)
@@ -72,23 +71,23 @@ controlLoop:
 		// - 15 seconds passed. We have to write about every 30s to not let the ESS shutdown for safety reasons.
 		if controllerOut != lastSetpointValue ||
 			lastSetpointWrittenAt.IsZero() ||
-			timemock.Now().Sub(lastSetpointWrittenAt) > time.Second*20 {
+			time.Now().Sub(lastSetpointWrittenAt) > time.Second*20 {
 			err := ess.SetpointSet(ctx, int16(controllerOut))
 			if err != nil {
 				return fmt.Errorf("failed to write ESS setpoint: %w", err)
 			}
 
 			lastSetpointValue = controllerOut
-			lastSetpointWrittenAt = timemock.Now()
+			lastSetpointWrittenAt = time.Now()
 		}
 
 		// collect statistics only every 10 seconds.
-		if lastStatsUpdateAt.IsZero() || timemock.Now().Sub(lastStatsUpdateAt) > time.Second*10 {
+		if lastStatsUpdateAt.IsZero() || time.Now().Sub(lastStatsUpdateAt) > time.Second*10 {
 			_, err := ess.Stats(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to read ESS stats: %w", err)
 			}
-			lastStatsUpdateAt = timemock.Now()
+			lastStatsUpdateAt = time.Now()
 		}
 	}
 
