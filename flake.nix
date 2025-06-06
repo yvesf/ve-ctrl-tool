@@ -1,14 +1,14 @@
 {
-  inputs.nixpkgs.url = "nixpkgs/nixos-24.11";
+  inputs.nixpkgs.url = "nixpkgs/nixos-25.05";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      packageDef = { buildGo123Module }: buildGo123Module {
+      packageDef = { buildGo124Module }: buildGo124Module {
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
-        vendorHash = "sha256-zwJ13y2B8NluCv8IQhQp6k08wedxb+Y2kKFO0k2SOVc=";
+        vendorHash = "sha256-g65fqfyVwmXT0pajkT6h2eUkSyz9RL9eVLHhl98s5Y8=";
       };
     in
     flake-utils.lib.eachDefaultSystem
@@ -18,7 +18,7 @@
           defaultPackage = packages.ve-ctrl-tool;
           devShell =
             with import nixpkgs { inherit system; }; mkShell {
-              packages = [ go_1_23 nixpkgs-fmt golangci-lint golangci-lint-langserver gofumpt ];
+              packages = [ go_1_24 nixpkgs-fmt golangci-lint golangci-lint-langserver gofumpt ];
             };
         }) // {
       nixosModule = { pkgs, config, lib, ... }:
