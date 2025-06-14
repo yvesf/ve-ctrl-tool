@@ -38,7 +38,7 @@ controlLoop:
 		}
 
 		m, lastMeasurement := meter.LastMeasurement()
-		if lastMeasurement.IsZero() || time.Now().Sub(lastMeasurement) > time.Second*10 {
+		if lastMeasurement.IsZero() || time.Since(lastMeasurement) > time.Second*10 {
 			slog.Info("no energy meter information", slog.Time("lastMeasurement", lastMeasurement))
 			err := ess.SetZero(ctx)
 			if err != nil {
@@ -54,7 +54,7 @@ controlLoop:
 			pidLastUpdateAt = time.Now()
 		}
 		// Take consumption negative to regulate to 0.
-		controllerOut := pidC.UpdateDuration(controllerInputM, time.Now().Sub(pidLastUpdateAt))
+		controllerOut := pidC.UpdateDuration(controllerInputM, time.Since(pidLastUpdateAt))
 		pidLastUpdateAt = time.Now()
 
 		// round PID output to reduce the need for updating the setpoint for marginal changes.
@@ -71,7 +71,7 @@ controlLoop:
 		// - 15 seconds passed. We have to write about every 30s to not let the ESS shutdown for safety reasons.
 		if controllerOut != lastSetpointValue ||
 			lastSetpointWrittenAt.IsZero() ||
-			time.Now().Sub(lastSetpointWrittenAt) > time.Second*20 {
+			time.Since(lastSetpointWrittenAt) > time.Second*20 {
 			err := ess.SetpointSet(ctx, int16(controllerOut))
 			if err != nil {
 				return fmt.Errorf("failed to write ESS setpoint: %w", err)
@@ -82,7 +82,7 @@ controlLoop:
 		}
 
 		// collect statistics only every 10 seconds.
-		if lastStatsUpdateAt.IsZero() || time.Now().Sub(lastStatsUpdateAt) > time.Second*10 {
+		if lastStatsUpdateAt.IsZero() || time.Since(lastStatsUpdateAt) > time.Second*10 {
 			_, err := ess.Stats(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to read ESS stats: %w", err)
