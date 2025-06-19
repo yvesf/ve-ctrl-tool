@@ -1,4 +1,4 @@
-package control
+package main
 
 import (
 	"context"
@@ -16,9 +16,15 @@ var metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
 	Help: "The current input for the PID controller",
 })
 
+type ESSControl interface {
+	Stats(ctx context.Context) (EssStats, error)
+	SetpointSet(ctx context.Context, value int16) error
+	SetZero(ctx context.Context) error
+}
+
 // Run starts the control loop.
 // The control loop is blocking and can be stopped by cancelling ctx.
-func Run(ctx context.Context, settings Settings, ess ESSControl, meter EnergyMeter) error {
+func RunController(ctx context.Context, ess ESSControl, meter *meterReader) error {
 	var (
 		pidLastUpdateAt       time.Time
 		lastStatsUpdateAt     time.Time
@@ -27,7 +33,7 @@ func Run(ctx context.Context, settings Settings, ess ESSControl, meter EnergyMet
 	)
 
 	pidC := NewPIDWithMetrics(0.15, 0.1, 0.15)
-	pidC.SetOutputLimits(-1*float64(settings.MaxWattCharge), float64(settings.MaxWattInverter))
+	pidC.SetOutputLimits(-1*float64(*SettingsMaxWattCharge), float64(*SettingsMaxWattInverter))
 
 controlLoop:
 	for {
@@ -47,7 +53,7 @@ controlLoop:
 			continue
 		}
 
-		controllerInputM := m.ConsumptionNegative() + float64(settings.PowerOffset)
+		controllerInputM := m.ConsumptionNegative() + float64(*SettingsPowerOffset)
 		metricControlInput.With().Set(controllerInputM)
 
 		if pidLastUpdateAt.IsZero() {
@@ -58,10 +64,10 @@ controlLoop:
 		pidLastUpdateAt = time.Now()
 
 		// round PID output to reduce the need for updating the setpoint for marginal changes.
-		controllerOut = math.Round(controllerOut/float64(settings.SetpointRounding)) * float64(settings.SetpointRounding)
+		controllerOut = math.Round(controllerOut/float64(*SettingsSetpointRounding)) * float64(*SettingsSetpointRounding)
 
 		// output zero around values +/- 10 around the control point.
-		if controllerOut > -1*float64(settings.ZeroPointWindow) && controllerOut < float64(settings.ZeroPointWindow) {
+		if controllerOut > -1*float64(*SettingsZeroPointWindow) && controllerOut < float64(*SettingsZeroPointWindow) {
 			controllerOut = 0
 		}
 

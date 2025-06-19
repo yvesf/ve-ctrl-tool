@@ -1,4 +1,4 @@
-package control
+package main
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func (m *essMock) SetZero(context.Context) error {
 	return nil
 }
 
-func TestRun__exitOnCancelledContext(t *testing.T) {
+func TestRunController__exitOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	essMock := &essMock{}
@@ -33,6 +33,6 @@ func TestRun__exitOnCancelledContext(t *testing.T) {
 		return nil
 	}
 
-	err := Run(ctx, Settings{}, essMock, nil)
+	err := RunController(ctx, essMock, nil)
 	be.Equal(t, context.Canceled, err)
 }

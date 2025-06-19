@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/bsm/openmetrics"
-	"github.com/yvesf/ve-ctrl-tool/cmd/ve-ess-shelly/control"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
@@ -34,6 +33,11 @@ var (
 	})
 )
 
+type EssStats struct {
+	IBat, UBat    float64
+	InverterPower int
+}
+
 // inverter implements the ESSControl interface. It supports controlling the setpoint and gathering status information
 // on the Victron ESS via mk2.
 type inverter struct {
@@ -54,22 +58,22 @@ func (m inverter) SetZero(ctx context.Context) error {
 	return nil
 }
 
-func (m inverter) Stats(ctx context.Context) (control.EssStats, error) {
+func (m inverter) Stats(ctx context.Context) (EssStats, error) {
 	iBat, uBat, err := m.adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
 	if err != nil {
-		return control.EssStats{}, fmt.Errorf("failed to read IBat/UBat: %w", err)
+		return EssStats{}, fmt.Errorf("failed to read IBat/UBat: %w", err)
 	}
 
 	inverterPowerRAM, _, err := m.adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDInverterPower1, 0)
 	if err != nil {
-		return control.EssStats{}, fmt.Errorf("failed to read InverterPower1: %w", err)
+		return EssStats{}, fmt.Errorf("failed to read InverterPower1: %w", err)
 	}
 
 	slog.Debug("multiplus stats", slog.Float64("IBat", float64(iBat)/10),
 		slog.Float64("UBat", float64(uBat)/100),
 		slog.Float64("InverterPower", float64(inverterPowerRAM)))
 
-	stats := control.EssStats{
+	stats := EssStats{
 		IBat:          float64(iBat) / 10,
 		UBat:          float64(uBat) / 100,
 		InverterPower: int(inverterPowerRAM),
