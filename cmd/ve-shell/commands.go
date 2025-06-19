@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yvesf/ve-ctrl-tool/pkg/backoff"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
@@ -257,8 +256,6 @@ func init() {
 			args:    1,
 			help:    "ess-static <arg> (run loop sending signed value to ESS Ram)",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
-				b := backoff.NewExponentialBackoff(time.Second, time.Second*25)
-
 				setpointWatt, err := strconv.Atoi(args[0])
 				if err != nil {
 					return fmt.Errorf("parse high-byte failed: %w", err)
@@ -321,14 +318,13 @@ func init() {
 
 				handleError:
 					errors++
-					sleepDuration, next := b.Next(errors)
-					if !next {
+					if errors > 20 {
+						slog.Error("fail after 20 retries")
 						break
 					}
-					slog.Info("sleep after error", slog.Float64("seconds", sleepDuration.Seconds()))
 					select {
 					case <-childCtx.Done():
-					case <-time.After(sleepDuration):
+					case <-time.After(time.Second * 5):
 					}
 				}
 
