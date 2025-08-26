@@ -20,8 +20,7 @@ func ESSInit(ctx context.Context, mk2 *Adapter) (*AdapterWithESS, error) {
 	// 200 is arbitrary chosen upper bound.
 	// should be corrected if information is available.
 	for i := 128; i < 200; i++ {
-		slog.Debug("probing ramid", slog.Int("ramID", i))
-		low, high, _, _, err := mk2.CommandReadRAMVar(ctx, byte(i), 0)
+		low, high, _, _, err := mk2.CommandReadRAMVar(ctx, vebus.RAMID(i), 0)
 		if err != nil {
 			return nil, fmt.Errorf("failed to enumerate ESS assistent ram records: %w", err)
 		}
@@ -29,9 +28,11 @@ func ESSInit(ctx context.Context, mk2 *Adapter) (*AdapterWithESS, error) {
 			slog.Debug("found end of ramIDs in use")
 			break
 		}
-
+		// The ID_Size word contains 0xZZZY, where:
+		// ZZZ = the Assistant ID. This is where you can recognize the function of the assistant (ESS ID = 5).
+		// Y = the number of ramIDs that will follow after the ID_Size.
 		assistantID := (uint16(high)<<8 | uint16(low)) >> 4
-		slog.Debug("id", slog.Int("assistantID", int(assistantID)))
+		slog.Debug("id", slog.Int("assistantID", int(assistantID)), slog.Int("ramID", i))
 		if assistantID == vebus.AssistantRAMIDESS {
 			return &AdapterWithESS{
 				Adapter:        mk2,

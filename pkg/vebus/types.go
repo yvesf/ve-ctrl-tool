@@ -4,6 +4,16 @@ import (
 	"context"
 )
 
+type RAMID byte
+
+func RAMIDs(values []byte) []RAMID {
+	var s []RAMID
+	for _, value := range values {
+		s = append(s, RAMID(value))
+	}
+	return s
+}
+
 // Signed16Bytes is nothing special but just literally implements the signed-integer encoding in ESS Mode 2 and 3.
 func Signed16Bytes(in int16) (uint8, uint8) {
 	var val uint16

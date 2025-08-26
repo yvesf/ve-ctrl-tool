@@ -150,9 +150,9 @@ func (m Adapter) CommandReadSetting(ctx context.Context, lowSettingID, highSetti
 
 var ErrVariableNotSupported = errors.New("VARIABLE_NOT_SUPPORTED")
 
-func (m Adapter) CommandReadRAMVar(ctx context.Context, ramID0, ramID1 byte,
+func (m Adapter) CommandReadRAMVar(ctx context.Context, ramID0, ramID1 vebus.RAMID,
 ) (value0Low, value0High, value1Low, value1High byte, err error) {
-	frame, err := vebus.WCommandReadRAMVar.Frame(ramID0, ramID1).WriteAndRead(ctx, m)
+	frame, err := vebus.WCommandReadRAMVar.Frame((byte)(ramID0), (byte)(ramID1)).WriteAndRead(ctx, m)
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("failed to execute CommandReadRAMVar: %w", err)
 	}
@@ -175,7 +175,7 @@ func (m Adapter) CommandReadRAMVar(ctx context.Context, ramID0, ramID1 byte,
 	return frame.Data[0], frame.Data[1], frame.Data[2], frame.Data[3], nil
 }
 
-func (m Adapter) CommandReadRAMVarUnsigned16(ctx context.Context, ramID0, ramID1 byte,
+func (m Adapter) CommandReadRAMVarUnsigned16(ctx context.Context, ramID0, ramID1 vebus.RAMID,
 ) (value0, value1 uint16, err error) {
 	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramID0, ramID1)
 	if err != nil {
@@ -184,7 +184,7 @@ func (m Adapter) CommandReadRAMVarUnsigned16(ctx context.Context, ramID0, ramID1
 	return uint16(v0l) | uint16(v0h)<<8, uint16(v1l) | uint16(v1h)<<8, nil
 }
 
-func (m Adapter) CommandReadRAMVarSigned16(ctx context.Context, ramID0, ramID1 byte,
+func (m Adapter) CommandReadRAMVarSigned16(ctx context.Context, ramID0, ramID1 vebus.RAMID,
 ) (value0, value1 int16, err error) {
 	v0l, v0h, v1l, v1h, err := m.CommandReadRAMVar(ctx, ramID0, ramID1)
 	if err != nil {

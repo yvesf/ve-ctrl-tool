@@ -109,13 +109,13 @@ func init() {
 				if len(args) != 1 {
 					return fmt.Errorf("wrong no of args")
 				}
-				var ramIDs []byte
+				var ramIDs []vebus.RAMID
 				for _, arg := range strings.Split(args[0], ",") {
 					v, err := strconv.ParseUint(arg, 10, 8)
 					if err != nil {
 						return fmt.Errorf("failed to parse ramid: %w", err)
 					}
-					ramIDs = append(ramIDs, byte(v))
+					ramIDs = append(ramIDs, vebus.RAMID(v))
 				}
 				if len(ramIDs) == 1 {
 					ramIDs = append(ramIDs, 0)
@@ -125,10 +125,10 @@ func init() {
 				if err != nil {
 					return fmt.Errorf("read-ram command failed: %w", err)
 				}
-				fmt.Printf("value0=%d value0(signed)=%d value0=0b%b value0=0x%x\n",
-					value0, vebus.ParseSigned16(value0), value0, value0)
-				fmt.Printf("value1=%d value1(signed)=%d value1=0b%b value1=0x%x\n",
-					value1, vebus.ParseSigned16(value1), value1, value1)
+				fmt.Printf("%v value0=%d value0(signed)=%d value0=0b%b value0=0x%x\n",
+					ramIDs[0], value0, vebus.ParseSigned16(value0), value0, value0)
+				fmt.Printf("%v value1=%d value1(signed)=%d value1=0b%b value1=0x%x\n",
+					ramIDs[1], value1, vebus.ParseSigned16(value1), value1, value1)
 				return nil
 			},
 		},

@@ -4,32 +4,79 @@ import "fmt"
 
 // The following block defines RAM IDs according to "Interfacing with VE Bus products - MK2 Protocol 3 14.docx".
 const (
-	RAMIDUMainsRMS                 = 0
-	RAMIDIMainsRMS                 = 1
-	RAMIDUInverterRMS              = 2
-	RAMIDIINverterRMS              = 3
-	RAMIDUBat                      = 4
-	RAMIDIBat                      = 5
-	RAMIDUBatRMS                   = 6 // RMS=value of ripple voltage
-	RAMIDInverterPeriodTime        = 7 // time-base 0.1s
-	RAMIDMainsPeriodTime           = 8 // time-base 0.1s
-	RAMIDSignedACLoadCurrent       = 9
-	RAMIDVirtualSwitchPosition     = 10
-	RAMIDIgnoreACInputState        = 11
-	RAMIDMultiFunctionalRelayState = 12
-	RAMIDChargeState               = 13 // battery monitor function
-	RAMIDInverterPower1            = 14 // filtered. 16bit signed integer. Positive AC->DC. Negative DC->AC.
-	RAMIDInverterPower2            = 15 // ..
-	RAMIDOutputPower               = 16 // AC Output. 16bit signed integer.
-	RAMIDInverterPower1Unfiltered  = 17
-	RAMIDInverterPower2Unfiltered  = 18
-	RAMIDOutputPowerUnfiltered     = 19
+	RAMIDUMainsRMS                 RAMID = 0
+	RAMIDIMainsRMS                 RAMID = 1
+	RAMIDUInverterRMS              RAMID = 2
+	RAMIDIINverterRMS              RAMID = 3
+	RAMIDUBat                      RAMID = 4
+	RAMIDIBat                      RAMID = 5
+	RAMIDUBatRMS                   RAMID = 6 // RMS=value of ripple voltage
+	RAMIDInverterPeriodTime        RAMID = 7 // time-base 0.1s
+	RAMIDMainsPeriodTime           RAMID = 8 // time-base 0.1s
+	RAMIDSignedACLoadCurrent       RAMID = 9
+	RAMIDVirtualSwitchPosition     RAMID = 10
+	RAMIDIgnoreACInputState        RAMID = 11
+	RAMIDMultiFunctionalRelayState RAMID = 12
+	RAMIDChargeState               RAMID = 13 // battery monitor function
+	RAMIDInverterPower1            RAMID = 14 // filtered. 16bit signed integer. Positive AC->DC. Negative DC->AC.
+	RAMIDInverterPower2            RAMID = 15 // ..
+	RAMIDOutputPower               RAMID = 16 // AC Output. 16bit signed integer.
+	RAMIDInverterPower1Unfiltered  RAMID = 17
+	RAMIDInverterPower2Unfiltered  RAMID = 18
+	RAMIDOutputPowerUnfiltered     RAMID = 19
 )
+
+func (r RAMID) String() string {
+	switch r {
+	case RAMIDUMainsRMS:
+		return fmt.Sprintf("RAMIDUMainsRMS(%d)", r)
+	case RAMIDIMainsRMS:
+		return fmt.Sprintf("RAMIDIMainsRMS(%d)", r)
+	case RAMIDUInverterRMS:
+		return fmt.Sprintf("RAMIDUInverterRMS(%d)", r)
+	case RAMIDIINverterRMS:
+		return fmt.Sprintf("RAMIDIINverterRMS(%d)", r)
+	case RAMIDUBat:
+		return fmt.Sprintf("RAMIDUBat(%d)", r)
+	case RAMIDIBat:
+		return fmt.Sprintf("RAMIDIBat(%d)", r)
+	case RAMIDUBatRMS:
+		return fmt.Sprintf("RAMIDUBatRMS(%d)", r)
+	case RAMIDInverterPeriodTime:
+		return fmt.Sprintf("RAMIDInverterPeriodTime(%d)", r)
+	case RAMIDMainsPeriodTime:
+		return fmt.Sprintf("RAMIDMainsPeriodTime(%d)", r)
+	case RAMIDSignedACLoadCurrent:
+		return fmt.Sprintf("RAMIDSignedACLoadCurrent(%d)", r)
+	case RAMIDVirtualSwitchPosition:
+		return fmt.Sprintf("RAMIDVirtualSwitchPosition(%d)", r)
+	case RAMIDIgnoreACInputState:
+		return fmt.Sprintf("RAMIDIgnoreACInputState(%d)", r)
+	case RAMIDMultiFunctionalRelayState:
+		return fmt.Sprintf("RAMIDMultiFunctionalRelayState(%d)", r)
+	case RAMIDChargeState:
+		return fmt.Sprintf("RAMIDChargeState(%d)", r)
+	case RAMIDInverterPower1:
+		return fmt.Sprintf("RAMIDInverterPower1(%d)", r)
+	case RAMIDInverterPower2:
+		return fmt.Sprintf("RAMIDInverterPower2(%d)", r)
+	case RAMIDOutputPower:
+		return fmt.Sprintf("RAMIDOutputPower(%d)", r)
+	case RAMIDInverterPower1Unfiltered:
+		return fmt.Sprintf("RAMIDInverterPower1Unfiltered(%d)", r)
+	case RAMIDInverterPower2Unfiltered:
+		return fmt.Sprintf("RAMIDInverterPower2Unfiltered(%d)", r)
+	case RAMIDOutputPowerUnfiltered:
+		return fmt.Sprintf("RAMIDOutputPowerUnfiltered(%d)", r)
+	default:
+		return fmt.Sprintf("Unknown(%d)", r)
+	}
+}
 
 // The following block defines Assistent ID to identify to which
 // assistant RAM records belong to.
 const (
-	AssistantRAMIDESS = 5 // ESS Assistant
+	AssistantRAMIDESS = 5 // ESS Assistant ID.
 )
 
 type Command byte
@@ -42,9 +89,16 @@ func (c Command) Frame(data ...byte) VeCommandFrame {
 }
 
 const (
+	// CommandA selects the address of the device to communicate with.
 	CommandA Command = 'A'
+	CommandN Command = 'N'
+	// CommandW prefixes the so called "Winmon" commands.
+	// They are a whole family of subcommands implemented as WCommand and WReply.
 	CommandW Command = 'W'
 	CommandR Command = 'R'
+	// CommandS ‘S’ (state) command can be used to send the panel state (switch position and input
+	// current set point) to the VE.Bus system.
+	CommandS Command = 'S'
 )
 
 type WCommand byte
