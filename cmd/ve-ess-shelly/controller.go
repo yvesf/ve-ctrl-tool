@@ -19,7 +19,6 @@ var metricControlInput = openmetrics.DefaultRegistry().Gauge(openmetrics.Desc{
 type ESSControl interface {
 	Stats(ctx context.Context) (EssStats, error)
 	SetpointSet(ctx context.Context, value int16) error
-	SetZero(ctx context.Context) error
 }
 
 // Run starts the control loop.
@@ -45,10 +44,19 @@ controlLoop:
 
 		m, lastMeasurement := meter.LastMeasurement()
 		if lastMeasurement.IsZero() || time.Since(lastMeasurement) > time.Second*10 {
-			slog.Info("no energy meter information", slog.Time("lastMeasurement", lastMeasurement))
-			err := ess.SetZero(ctx)
-			if err != nil {
-				return err
+			// Set ESS to 0.
+			if lastSetpointValue != 0 ||
+				lastSetpointWrittenAt.IsZero() ||
+				time.Since(lastSetpointWrittenAt) > time.Second*5 {
+				slog.Info("no energy meter information", slog.Time("lastMeasurement", lastMeasurement))
+
+				err := ess.SetpointSet(ctx, 0)
+				if err != nil {
+					return err
+				}
+
+				lastSetpointValue = 0
+				lastSetpointWrittenAt = time.Now()
 			}
 			continue
 		}

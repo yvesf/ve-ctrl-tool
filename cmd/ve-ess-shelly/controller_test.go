@@ -20,10 +20,6 @@ func (m *essMock) Stats(ctx context.Context) (EssStats, error) {
 	return m.stats(ctx)
 }
 
-func (m *essMock) SetZero(context.Context) error {
-	return nil
-}
-
 func TestRunController__exitOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

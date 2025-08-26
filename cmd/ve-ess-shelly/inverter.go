@@ -49,15 +49,6 @@ func (m inverter) SetpointSet(ctx context.Context, value int16) error {
 	return m.adapter.SetpointSet(ctx, value)
 }
 
-func (m inverter) SetZero(ctx context.Context) error {
-	err := m.adapter.SetpointSet(ctx, 0)
-	if err != nil {
-		return err
-	}
-	metricMultiplusSetpoint.With().Reset(openmetrics.GaugeOptions{})
-	return nil
-}
-
 func (m inverter) Stats(ctx context.Context) (EssStats, error) {
 	iBat, uBat, err := m.adapter.CommandReadRAMVarSigned16(ctx, vebus.RAMIDIBat, vebus.RAMIDUBat)
 	if err != nil {
