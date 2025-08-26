@@ -8,7 +8,7 @@
         pname = "ve-ctrl-tool";
         version = "0.0.1";
         src = ./.;
-        vendorHash = "sha256-g65fqfyVwmXT0pajkT6h2eUkSyz9RL9eVLHhl98s5Y8=";
+        vendorHash = "sha256-4t026XI7iu0kuZ/+CfaWbtU/1CvLqfy0EO2yoW6I+Rg=";
       };
     in
     flake-utils.lib.eachDefaultSystem
