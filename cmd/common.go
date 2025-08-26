@@ -2,16 +2,11 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"time"
 
-	"github.com/bsm/openmetrics"
-	"github.com/bsm/openmetrics/omhttp"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
@@ -21,10 +16,9 @@ var (
 	flagLow          = flag.Bool("low", false, "Do not attempt to upgrade to 115200 baud")
 	flagVEAddress    = flag.Int("veAddress", 0, "Set other address than 0")
 	flagDebug        = flag.Bool("debug", false, "Set log level to debug")
-	flagMetricsHTTP  = flag.String("metricsHTTP", "", "Address of a http server serving metrics under /metrics")
 )
 
-func CommonInit(ctx context.Context) *mk2.Adapter {
+func SetupLogger() {
 	flag.Parse()
 
 	logLevel := slog.LevelInfo
@@ -33,28 +27,10 @@ func CommonInit(ctx context.Context) *mk2.Adapter {
 	}
 	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(h))
+}
 
-	// Metrics HTTP endpoint
-	if *flagMetricsHTTP != `` {
-		mux := http.NewServeMux()
-		mux.Handle("/metrics", omhttp.NewHandler(openmetrics.DefaultRegistry()))
-
-		var lc net.ListenConfig
-		ln, err := lc.Listen(ctx, "tcp", *flagMetricsHTTP)
-		if err != nil {
-			slog.Error("Listen on http failed", slog.String("addr", *flagMetricsHTTP))
-			os.Exit(1)
-		}
-
-		srv := &http.Server{Handler: mux}
-		go func() {
-			err := srv.Serve(ln)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				slog.Error("http server failed", slog.Any("err", err))
-				os.Exit(1)
-			}
-		}()
-	}
+func InitMk2(ctx context.Context) *mk2.Adapter {
+	flag.Parse()
 
 	port, err := mk2.NewSerialPort(*flagSerialDevice)
 	if err != nil {

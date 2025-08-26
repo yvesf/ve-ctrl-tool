@@ -32,7 +32,6 @@ func RunController(ctx context.Context, ess ESSControl, meter *meterReader) erro
 	)
 
 	pidC := NewPIDWithMetrics(0.15, 0.1, 0.15)
-	pidC.SetOutputLimits(-1*float64(*SettingsMaxWattCharge), float64(*SettingsMaxWattInverter))
 
 controlLoop:
 	for {
@@ -41,6 +40,8 @@ controlLoop:
 			break controlLoop
 		case <-time.After(time.Millisecond * 25):
 		}
+
+		pidC.SetOutputLimits(-1*float64(*SettingsMaxWattCharge), float64(*SettingsMaxWattInverter))
 
 		m, lastMeasurement := meter.LastMeasurement()
 		if lastMeasurement.IsZero() || time.Since(lastMeasurement) > time.Second*10 {

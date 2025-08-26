@@ -39,7 +39,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	slog.Info(fmt.Sprint("Port: ", slave))
 
 	go func() {
 		<-ctx.Done()
@@ -55,7 +54,8 @@ func main() {
 		panic(err)
 	}
 
-	println("listening")
+	slog.Info("Ready", "port", slave)
+
 	ch := mk2.NewListenChannel()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -66,7 +66,7 @@ func main() {
 			case frame := <-ch:
 				switch frame[2] {
 				case byte(vebus.CommandR):
-					slog.Info("Reset received")
+					slog.Info("reset received")
 				case byte(vebus.CommandN):
 					slog.Info("upgrade notice received")
 				case byte(vebus.CommandA):
@@ -78,7 +78,7 @@ func main() {
 					switch wCommand {
 					case byte(vebus.WCommandReadRAMVar):
 						ramIDs := vebus.RAMIDs(frame[4:])
-						slog.Info("Read RAM Var", slog.Any("addresses", fmt.Sprintf("%+v", ramIDs)))
+						slog.Info("read RAM Var", slog.Any("addresses", fmt.Sprintf("%+v", ramIDs)))
 						b := vebus.CommandW.Frame(0x85) // , 0x05<<4, 0x00, 0x00, 0x00
 						for _, ramID := range ramIDs {
 							switch ramID {
@@ -100,10 +100,10 @@ func main() {
 						mk2.Write(b.Marshal())
 					case byte(vebus.WCommandWriteRAMVar):
 						address := vebus.ParseSigned16Bytes(frame[4], frame[5])
-						slog.Info("WCommandWriteRAMVar", slog.Any("address", address))
+						slog.Info("received WCommandWriteRAMVar", slog.Any("address", address))
 					case byte(vebus.WCommandWriteData):
 						value := vebus.ParseSigned16Bytes(frame[4], frame[5])
-						slog.Info("WriteData", slog.Any("value", value))
+						slog.Info("received WriteData", slog.Any("value", value))
 						b := vebus.CommandW.Frame(0x87, 0x00, 0x00) // "Just ignore the rest of the frame (00,00 in this case)) "
 						mk2.Write(b.Marshal())
 					}

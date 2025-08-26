@@ -61,6 +61,8 @@ func main() {
 		_ = server.Shutdown(context.Background())
 	}()
 
+	slog.Info("ready", "port", *flagListenAddr)
+
 	reader := bufio.NewReader(os.Stdin)
 	for ctx.Err() == nil {
 		fmt.Printf("TotalPower=> ")

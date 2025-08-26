@@ -4,7 +4,7 @@ this is a library and cli tools to interact with Victron (https://www.victronene
 over the Mk3 adapter.
 
 The author and the project are not affiliated with the Victron Company. The brand name is used
-only in educational context. Everything here is shared for educational purpose only and 
+only in educational context. Everything here is shared for educational purpose only and
 for use at your own risk only.
 
 ## Code structure
@@ -48,6 +48,14 @@ Screenshot of monitoring of a 12V Multiplus (smallest available model):
 
 ![](README.grafana.png)
 
+
+### Runtime flags manipulation
+
+With the browser, or:
+```shell
+curl localhost:8080/flags --data 'maxInverter=123'
+```
+
 ## NixOS flake
 
 Configure NixOS Module:
@@ -60,5 +68,3 @@ Configure NixOS Module:
   };
 }
 ```
-
-

@@ -24,7 +24,8 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	adapter := cmd.CommonInit(ctx)
+	cmd.SetupLogger()
+	adapter := cmd.InitMk2(ctx)
 	defer adapter.Wait()
 	defer adapter.Shutdown()
 

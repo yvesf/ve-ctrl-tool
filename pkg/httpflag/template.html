@@ -1,0 +1,49 @@
+{{ define "table" }}
+<html>
+<body>
+<h1>Flags</h1>
+<table>
+    <tr>
+        <th>Name</th>
+        <th>Usage</th>
+        <th>Value</th>
+    </tr>
+{{ range $name, $flag := .flags }}
+    <tr>
+        <td>{{ $name }}</td>
+        <td>{{ $flag.Usage }}</td>
+        <td>
+            <form method="POST" id="form_{{ $name }}" style="float: left;">
+                <input type="text" name="{{ $name }}" value="{{ $flag.Value }}" />
+            </form>
+            <button value="Update"/ onclick="javascript:document.getElementById('form_{{ $name }}').submit()">Update</button>
+        </td>
+    </tr>
+{{ end }}
+</table>
+</body>
+</html>
+{{ end }}
+
+{{ define "update" }}
+<html>
+<head>
+<meta http-equiv="refresh" content="1; url={{.url}}" />
+</head>
+<body>
+<h1>Update</h1>
+<table>
+    <tr>
+        <th>Name</th>
+        <th>New value</th>
+    </tr>
+    {{ range $name, $value := .patch }}
+    <tr>
+        <td>{{ $name }}</td>
+        <td>{{ $value }}</td>
+    </tr>
+{{ end }}
+</table>
+</body>
+</html>
+{{ end }}

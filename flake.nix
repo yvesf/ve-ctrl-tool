@@ -31,10 +31,10 @@
               default = "10.1.0.210";
               description = "Address of the shelly EM 3 Energy Meter";
             };
-            metricsAddress = lib.mkOption {
+            http = lib.mkOption {
               type = lib.types.str;
               default = "127.0.0.1:18001";
-              description = "address to listen on for serving /metrics requests";
+              description = "address to listen on for /metrics and /flags";
             };
             serialDevice = lib.mkOption {
               type = lib.types.str;
@@ -65,7 +65,7 @@
                 serviceConfig = {
                   ExecStart = ''
                     ${ve-ctrl-tool}/bin/ve-ess-shelly \
-                      -metricsHTTP "${cfg.metricsAddress}" \
+                      -http "${cfg.http}" \
                       ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
                       ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
                       "${cfg.shellyEM3}"
