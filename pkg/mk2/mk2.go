@@ -14,14 +14,6 @@ type Adapter struct {
 	*IO
 }
 
-func NewAdapter(address string) (*Adapter, error) {
-	reader, err := NewReader(address)
-	if err != nil {
-		return nil, err
-	}
-	return &Adapter{reader}, nil
-}
-
 // SetAddress selects VE.Bus device at 'address'.
 func (m Adapter) SetAddress(ctx context.Context, address byte) error {
 	slog.Debug(fmt.Sprintf("SetAddress 0x%x", address))

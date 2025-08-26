@@ -56,10 +56,12 @@ func CommonInit(ctx context.Context) *mk2.Adapter {
 		}()
 	}
 
-	mk2, err := mk2.NewAdapter(*flagSerialDevice)
+	port, err := mk2.NewSerialPort(*flagSerialDevice)
 	if err != nil {
 		panic(err)
 	}
+
+	mk2 := &mk2.Adapter{IO: mk2.NewReader(port)}
 
 	// reset both in high and low speed
 	err = mk2.SetBaudHigh()
@@ -82,7 +84,7 @@ func CommonInit(ctx context.Context) *mk2.Adapter {
 		}
 	}
 
-	err = mk2.StartReader()
+	err = mk2.StartReader(true)
 	if err != nil {
 		panic(err)
 	}
