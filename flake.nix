@@ -24,6 +24,19 @@
       nixosModule = { pkgs, config, lib, ... }:
         let ve-ctrl-tool = pkgs.callPackage packageDef { }; in
         {
+          options.services.forecast = {
+            enable = lib.mkEnableOption "the ve-ess-shelly sunshine forecast service";
+            lat = lib.mkOption {
+              type = lib.types.float;
+              default = 48.517737;
+              description = "latitude WGS-84 geo coordinate";
+            };
+            lon = lib.mkOption {
+              type = lib.types.float;
+              default = 7.917704;
+              description = "longitude WGS-84 geo coordinate";
+            };
+          };
           options.services.ve-ess-shelly = {
             enable = lib.mkEnableOption "the multiplus + shelly controller";
             shellyEM3 = lib.mkOption {
@@ -52,23 +65,25 @@
           };
           config =
             let
-              cfg = config.services.ve-ess-shelly;
+              cfgForecast = config.services.forecast;
+              cfgShelly = config.services.ve-ess-shelly;
             in
-            lib.mkIf cfg.enable {
-              environment.systemPackages = [ ve-ctrl-tool ]; # add to system because it's handy for debugging
-              systemd.services.ve-ess-shelly = {
-                description = "the multiplus + shelly controller";
+            {
+              # add to system because it's handy for debugging
+              environment.systemPackages = lib.mkIf (cfgForecast.enable or cfgShelly.enable) [ ve-ctrl-tool ];
+
+              systemd.services.forecast = lib.mkIf cfgForecast.enable {
+                description = "the ve-ess-shelly forecast";
                 wantedBy = [ "default.target" ];
                 unitConfig = {
                   StartLimitInterval = 0;
                 };
                 serviceConfig = {
                   ExecStart = ''
-                    ${ve-ctrl-tool}/bin/ve-ess-shelly \
-                      -http "${cfg.http}" \
-                      ${lib.optionalString (cfg.maxCharge != null) "-maxCharge ${toString cfg.maxCharge}"} \
-                      ${lib.optionalString (cfg.maxInverter != null) "-maxInverter ${toString cfg.maxInverter}"} \
-                      "${cfg.shellyEM3}"
+                    ${ve-ctrl-tool}/bin/forecast \
+                      -http "http://${cfgShelly.http}/flags" \
+                      -lat ${toString cfgForecast.lat} \
+                      -lon ${toString cfgForecast.lon}
                   '';
                   LockPersonality = true;
                   CapabilityBoundingSet = "";
@@ -76,7 +91,9 @@
                   Group = "dialout";
                   MemoryDenyWriteExecute = true;
                   NoNewPrivileges = true;
+                  PrivateDevices = true;
                   PrivateUsers = true;
+                  ProcSubset = "pid";
                   ProtectClock = true;
                   ProtectControlGroups = true;
                   ProtectHome = true;
@@ -84,7 +101,7 @@
                   ProtectKernelLogs = true;
                   ProtectKernelModules = true;
                   ProtectKernelTunables = true;
-                  ProtectProc = "noaccess";
+                  ProtectProc = "invisible";
                   ProtectSystem = "strict";
                   RemoveIPC = true;
                   Restart = "always";
@@ -96,7 +113,51 @@
                   SystemCallArchitectures = "native";
                   SystemCallErrorNumber = "EPERM";
                   SystemCallFilter = [ "@system-service" ];
-                  UMask = "0007";
+                  UMask = "0022";
+                };
+              };
+              systemd.services.ve-ess-shelly = lib.mkIf cfgShelly.enable {
+                description = "the multiplus + shelly controller";
+                wantedBy = [ "default.target" ];
+                unitConfig = {
+                  StartLimitInterval = 0;
+                };
+                serviceConfig = {
+                  ExecStart = ''
+                    ${ve-ctrl-tool}/bin/ve-ess-shelly \
+                      -http "${cfgShelly.http}" \
+                      ${lib.optionalString (cfgShelly.maxCharge != null) "-maxCharge ${toString cfgShelly.maxCharge}"} \
+                      ${lib.optionalString (cfgShelly.maxInverter != null) "-maxInverter ${toString cfgShelly.maxInverter}"} \
+                      "${cfgShelly.shellyEM3}"
+                  '';
+                  LockPersonality = true;
+                  CapabilityBoundingSet = "";
+                  DynamicUser = true;
+                  Group = "dialout";
+                  MemoryDenyWriteExecute = true;
+                  NoNewPrivileges = true;
+                  PrivateUsers = true;
+                  ProcSubset = "pid";
+                  ProtectClock = true;
+                  ProtectControlGroups = true;
+                  ProtectHome = true;
+                  ProtectHostname = true;
+                  ProtectKernelLogs = true;
+                  ProtectKernelModules = true;
+                  ProtectKernelTunables = true;
+                  ProtectProc = "invisible";
+                  ProtectSystem = "strict";
+                  RemoveIPC = true;
+                  Restart = "always";
+                  RestartSec = "10s";
+                  RestrictAddressFamilies = "AF_INET AF_INET6";
+                  RestrictNamespaces = true;
+                  RestrictRealtime = true;
+                  RestrictSUIDSGID = true;
+                  SystemCallArchitectures = "native";
+                  SystemCallErrorNumber = "EPERM";
+                  SystemCallFilter = [ "@system-service" "@~privileged" ];
+                  UMask = "0022";
                 };
               };
             };
