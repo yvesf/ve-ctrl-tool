@@ -3,10 +3,9 @@ package cmd
 import (
 	"context"
 	"flag"
-	"log/slog"
-	"os"
 	"time"
 
+	"github.com/yvesf/ve-ctrl-tool/pkg/logging"
 	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 	"github.com/yvesf/ve-ctrl-tool/pkg/vebus"
 )
@@ -20,13 +19,7 @@ var (
 
 func SetupLogger() {
 	flag.Parse()
-
-	logLevel := slog.LevelInfo
-	if *flagDebug {
-		logLevel = slog.LevelDebug
-	}
-	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
-	slog.SetDefault(slog.New(h))
+	logging.Init(*flagDebug)
 }
 
 func InitMk2(ctx context.Context) *mk2.Adapter {
@@ -44,7 +37,7 @@ func InitMk2(ctx context.Context) *mk2.Adapter {
 	if err != nil {
 		panic(err)
 	}
-	mk2.Write(vebus.CommandR.Frame().Marshal())
+	mk2.WriteContext(ctx, vebus.CommandR.Frame().Marshal())
 	time.Sleep(time.Second * 1)
 	err = mk2.SetBaudLow()
 	if err != nil {
@@ -60,7 +53,7 @@ func InitMk2(ctx context.Context) *mk2.Adapter {
 		}
 	}
 
-	err = mk2.StartReader(true)
+	err = mk2.StartReader(ctx, true)
 	if err != nil {
 		panic(err)
 	}

@@ -51,3 +51,23 @@ func (m *AdapterWithESS) SetpointSet(ctx context.Context, value int16) error {
 	slog.Info("write setpoint", slog.Int("value", int(value)), slog.Int("record", int(m.assistantRAMID)))
 	return m.CommandWriteRAMVarDataSigned(ctx, m.assistantRAMID+1, value)
 }
+
+func (m *AdapterWithESS) ReadBatteryCapacity(ctx context.Context) (float64, error) {
+	capacityLow, capacityHigh, err := m.CommandReadSetting(ctx, vebus.SettingIDBatteryCapacity)
+	if err != nil {
+		return 0.0, fmt.Errorf("reading battery capacity: %w", err)
+	}
+	capacityAh := float64(uint16(capacityLow) | (uint16(capacityHigh) << 8))
+
+	floatVoltageLow, floatVoltageHigh, err := m.CommandReadSetting(ctx, vebus.SettingIDUBatFloat)
+	if err != nil {
+		return 0.0, fmt.Errorf("reading float voltage: %w", err)
+	}
+	floatVoltage := float64(vebus.ParseSigned16Bytes(floatVoltageLow, floatVoltageHigh)) / 100.0
+
+	capacityKWh := (capacityAh * floatVoltage) / 1000
+	// approximation: reduce capacity to match realistic capacity.
+	capacityKWh = capacityKWh * 0.9
+
+	return capacityKWh, nil
+}

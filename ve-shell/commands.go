@@ -50,7 +50,8 @@ func init() {
 			args:    0,
 			help:    "reset requests sends \"R\" to request a device reset",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, _ ...string) error {
-				_, _ = vebus.CommandR.Frame().WriteAndRead(ctx, adapter)
+				request := vebus.CommandR.Frame()
+				_, _ = mk2.WriteAndRead(ctx, adapter.IO, request)
 				time.Sleep(time.Second * 1)
 				println("reset finished")
 				return nil
@@ -78,26 +79,23 @@ func init() {
 		},
 		{
 			command: "read-setting",
-			args:    2,
-			help:    "read-setting <low-byte> <high-byte> (CommandReadSetting)",
+			args:    1,
+			help:    "read-setting <setting-id> (CommandReadSetting)",
 			fun: func(ctx context.Context, adapter *mk2.Adapter, args ...string) error {
-				if len(args) != 2 {
+				if len(args) != 1 {
 					return fmt.Errorf("wrong number of args")
 				}
-				low, err := strconv.Atoi(args[0])
+				settingIDValue, err := strconv.Atoi(args[0])
 				if err != nil {
 					return fmt.Errorf("low byte")
 				}
-				high, err := strconv.Atoi(args[1])
-				if err != nil {
-					return fmt.Errorf("high byte")
-				}
-				lowValue, highValue, err := adapter.CommandReadSetting(ctx, byte(low), byte(high))
+				settingID := vebus.SettingID(settingIDValue)
+				lowValue, highValue, err := adapter.CommandReadSetting(ctx, settingID)
 				if err != nil {
 					return fmt.Errorf("command read-setting failed: %w", err)
 				}
-				fmt.Printf("value=%d low=0x%x high=0x%x low=0b%b high=0b%b\n",
-					int(lowValue)+int(highValue)<<8, lowValue, highValue, lowValue, highValue)
+				fmt.Printf("%s value=%d low=0x%x high=0x%x low=0b%b high=0b%b\n",
+					settingID, int(lowValue)+int(highValue)<<8, lowValue, highValue, lowValue, highValue)
 				return nil
 			},
 		},

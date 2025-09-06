@@ -158,3 +158,57 @@ func (r WReply) String() string {
 		return fmt.Sprintf("undefined reply 0x%02x", uint8(r))
 	}
 }
+
+type SettingID uint16
+
+const (
+	SettingIDFlags0                       SettingID = 0
+	SettingIDFlags1                       SettingID = 1
+	SettingIDUBatAbsorption               SettingID = 2
+	SettingIDUBatFloat                    SettingID = 3
+	SettingIDIBatBulk                     SettingID = 4
+	SettingIDUInvSetpoint                 SettingID = 5
+	SettingIDIMainsLimitAC1               SettingID = 6
+	SettingIDRepeatedAbsorptionTime       SettingID = 7
+	SettingIDRepeatedAbsorptionInterval   SettingID = 8
+	SettingIDMaximumAbsorptionDuration    SettingID = 9
+	SettingIDChargecharacteristic         SettingID = 10
+	SettingIDUBatLowLimitForInverter      SettingID = 11
+	SettingIDUBatLowhysteresisforInverter SettingID = 12
+	SettingIDBatteryCapacity              SettingID = 64
+)
+
+func (s SettingID) String() string {
+	switch s {
+	case SettingIDFlags0:
+		return "SettingIDFlags0"
+	case SettingIDFlags1:
+		return "SettingIDFlags1"
+	case SettingIDUBatAbsorption:
+		return "SettingIDUBatAbsorption"
+	case SettingIDUBatFloat:
+		return "SettingIDUBatFloat"
+	case SettingIDIBatBulk:
+		return "SettingIDIBatBulk"
+	case SettingIDUInvSetpoint:
+		return "SettingIDUInvSetpoint"
+	case SettingIDIMainsLimitAC1:
+		return "SettingIDIMainsLimitAC1"
+	case SettingIDRepeatedAbsorptionTime:
+		return "SettingIDRepeatedAbsorptionTime"
+	case SettingIDRepeatedAbsorptionInterval:
+		return "SettingIDRepeatedAbsorptionInterval"
+	case SettingIDMaximumAbsorptionDuration:
+		return "SettingIDMaximumAbsorptionDuration"
+	case SettingIDChargecharacteristic:
+		return "SettingIDChargecharacteristic"
+	case SettingIDUBatLowLimitForInverter:
+		return "SettingIDUBatLowLimitForInverter"
+	case SettingIDUBatLowhysteresisforInverter:
+		return "SettingIDUBatLowhysteresisforInverter"
+	case SettingIDBatteryCapacity:
+		return "SettingIDBatteryCapacity"
+	default:
+		return fmt.Sprintf("undefined setting 0x%04x", uint16(s))
+	}
+}

@@ -39,10 +39,19 @@ func main() {
 	defer cancel()
 
 	flag.Parse()
+
+	var statusHandler http.HandlerFunc
 	if *SettingsHTTP != `` {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", omhttp.NewHandler(openmetrics.DefaultRegistry()))
 		mux.Handle("/flags", httpflag.NewHandler(flag.VisitAll))
+		mux.Handle("/status", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if statusHandler == nil {
+				http.Error(w, "not ready", http.StatusInternalServerError)
+				return
+			}
+			statusHandler(w, r)
+		}))
 
 		srv := &http.Server{
 			Handler: mux,
@@ -74,7 +83,13 @@ func main() {
 		cancel()
 	}()
 
-	err = RunController(ctx, &inverter{adapter: mk2Ess}, m)
+	c := Controller{
+		meter: m,
+		ess:   mk2Ess,
+	}
+	statusHandler = c.ServeHTTP
+
+	err = c.Run(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("run failed", slog.Any("err", err))
 		os.Exit(1)

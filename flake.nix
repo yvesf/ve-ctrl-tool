@@ -81,7 +81,7 @@
                 serviceConfig = {
                   ExecStart = ''
                     ${ve-ctrl-tool}/bin/forecast \
-                      -http "http://${cfgShelly.http}/flags" \
+                      -http "http://${cfgShelly.http}" \
                       -lat ${toString cfgForecast.lat} \
                       -lon ${toString cfgForecast.lon}
                   '';

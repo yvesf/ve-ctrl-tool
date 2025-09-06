@@ -2,33 +2,49 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
-	"github.com/carlmjohnson/be"
+	"github.com/yvesf/ve-ctrl-tool/pkg/logging"
+	"github.com/yvesf/ve-ctrl-tool/pkg/mk2"
 )
 
-type essMock struct {
-	setpointSet func(context.Context, int16) error
-	stats       func(context.Context) (EssStats, error)
-}
-
-func (m *essMock) SetpointSet(ctx context.Context, value int16) error {
-	return m.setpointSet(ctx, value)
-}
-
-func (m *essMock) Stats(ctx context.Context) (EssStats, error) {
-	return m.stats(ctx)
-}
-
 func TestRunController__exitOnCancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	essMock := &essMock{}
-	essMock.setpointSet = func(_ context.Context, value int16) error {
-		be.Equal(t, 0, value)
-		return nil
+	logging.Init(true)
+
+	simulatorPort, clientPort := mk2.PipedPort()
+
+	simulator := mk2.Simulator{
+		Port: simulatorPort,
+	}
+	go func() {
+		ctx := logging.WithAttrs(context.Background(), slog.String("logger", "simulator"))
+		simulator.Run(ctx)
+	}()
+
+	ctx := logging.WithAttrs(context.Background(), slog.String("logger", "client"))
+
+	mk2Adapter := &mk2.Adapter{IO: mk2.NewReader(clientPort)}
+
+	err := mk2Adapter.StartReader(ctx, true)
+	if err != nil {
+		panic(err)
 	}
 
-	err := RunController(ctx, essMock, nil)
-	be.Equal(t, context.Canceled, err)
+	mk2Ess, err := mk2.ESSInit(ctx, mk2Adapter)
+	if err != nil {
+		panic(err)
+	}
+
+	err = mk2Ess.SetpointSet(ctx, 100)
+	if err != nil {
+		t.Fatalf("setpoint set: %s", err)
+	}
+
+	if simulator.RamVars[129] == nil {
+		t.Fatal("Ram var was not written")
+	}
+	if val := *simulator.RamVars[129]; val != 100 {
+		t.Fatalf("Wrong value %d in ram var 129", val)
+	}
 }

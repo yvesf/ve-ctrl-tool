@@ -1,9 +1,5 @@
 package vebus
 
-import (
-	"context"
-)
-
 type RAMID byte
 
 func RAMIDs(values []byte) []RAMID {
@@ -74,14 +70,6 @@ func (f VeCommandFrame) ParseResponse(data []byte) *VeCommandFrame {
 	return nil
 }
 
-func (f VeCommandFrame) WriteAndRead(ctx context.Context, io frameReadWriter) (response *VeCommandFrame, err error) {
-	_, err = io.ReadAndWrite(ctx, f.Marshal(), func(d []byte) bool {
-		response = f.ParseResponse(d)
-		return response != nil
-	})
-	return response, err
-}
-
 type VeWFrame struct {
 	Command WCommand
 	Data    []byte
@@ -104,14 +92,6 @@ func (f VeWFrame) ParseResponse(data []byte) *VeWFrameReply {
 	return nil
 }
 
-func (f VeWFrame) WriteAndRead(ctx context.Context, io frameReadWriter) (response *VeWFrameReply, err error) {
-	_, err = io.ReadAndWrite(ctx, f.Marshal(), func(d []byte) bool {
-		response = f.ParseResponse(d)
-		return response != nil
-	})
-	return response, err
-}
-
 type VeWFrameReply struct {
 	Reply WReply
 	Data  []byte
@@ -120,8 +100,4 @@ type VeWFrameReply struct {
 type VeFrame interface {
 	Marshal() []byte
 	ParseResponse([]byte) VeFrame
-}
-
-type frameReadWriter interface {
-	ReadAndWrite(context.Context, []byte, func([]byte) bool) ([]byte, error)
 }

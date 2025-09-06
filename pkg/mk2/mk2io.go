@@ -25,9 +25,27 @@ type FilePort struct {
 	io.ReadWriter
 }
 
-func (f *FilePort) SetSpeed(_ int) error {
-	slog.Info("skip setting speed on file")
+func (f *FilePort) SetSpeed(speed int) error {
+	slog.Info("skip setting speed on file", slog.Int("speed", speed))
 	return nil
+}
+
+// PipedPort returns two instances of FilePort which are connected
+// to each other using io.Pipe().
+func PipedPort() (*FilePort, *FilePort) {
+	clientReader, simulatorWriter := io.Pipe()
+	simulatorReader, clientWriter := io.Pipe()
+
+	clientReadWriter := struct {
+		io.Reader
+		io.Writer
+	}{clientReader, clientWriter}
+	simulatorReadWriter := struct {
+		io.Reader
+		io.Writer
+	}{simulatorReader, simulatorWriter}
+
+	return &FilePort{ReadWriter: clientReadWriter}, &FilePort{ReadWriter: simulatorReadWriter}
 }
 
 type SerialPort struct {
@@ -81,10 +99,11 @@ type IO struct {
 	listenerProduce chan chan []byte
 	listenerClose   chan chan []byte
 
-	commandMutex   sync.Mutex
-	signalShutdown chan struct{}
-	running        bool
-	wg             sync.WaitGroup
+	commandMutex sync.Mutex
+	ctx          context.Context
+	ctxCancel    context.CancelFunc
+	running      bool
+	wg           sync.WaitGroup
 }
 
 func NewReader(port Port) *IO {
@@ -108,10 +127,14 @@ func (r *IO) SetBaudLow() error {
 }
 
 // ReadAndWrite write a command and return the response
-// StartReader must have been called once before.
+// StartReader must be called before calling ReadAndWrite.
 func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte) bool) ([]byte, error) {
 	r.commandMutex.Lock()
 	defer r.commandMutex.Unlock()
+
+	if !r.running {
+		return nil, fmt.Errorf("IO is not running, call StartReader first")
+	}
 
 	done := make(chan struct{})
 	defer close(done)
@@ -122,7 +145,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 		defer close(response)
 		defer r.Close(l)
 
-		r.Write(data)
+		r.WriteContext(ctx, data)
 		for {
 			select {
 			case frame := <-l:
@@ -133,7 +156,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 					}
 					return
 				}
-				slog.Debug("dropping while waiting for response", slog.Any("frame.data", frame))
+				slog.DebugContext(ctx, "dropping while waiting for response", slog.Any("frame.data", frame))
 			case <-done: // timeout
 				return
 			}
@@ -151,7 +174,7 @@ func (r *IO) ReadAndWrite(ctx context.Context, data []byte, receiver func([]byte
 }
 
 // StartReader runs the go-routines that reads from the port in the background.
-func (r *IO) StartReader(waitForPackets bool) error {
+func (r *IO) StartReader(ctx context.Context, waitForPackets bool) error {
 	var listeners []chan []byte
 	frames := make(chan []byte)
 	wait := make(chan struct{})
@@ -162,7 +185,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 		r.commandMutex.Unlock()
 		return fmt.Errorf("already running")
 	}
-	r.signalShutdown = make(chan struct{})
+	r.ctx, r.ctxCancel = context.WithCancel(ctx)
 	r.running = true
 	r.commandMutex.Unlock()
 
@@ -172,7 +195,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 		l := make(chan []byte)
 		for {
 			select {
-			case <-r.signalShutdown:
+			case <-r.ctx.Done():
 				close(l)
 				return
 			case r.listenerProduce <- l:
@@ -191,17 +214,17 @@ func (r *IO) StartReader(waitForPackets bool) error {
 					return
 				}
 				if len(f) == 8 && f[2] == 'V' {
-					slog.Debug("received broadcast frame 'V'",
+					slog.DebugContext(r.ctx, "received broadcast frame 'V'",
 						slog.Any("frame", hex.EncodeToString(f)))
 				} else {
-					slog.Debug("received bytes",
+					slog.DebugContext(r.ctx, "received bytes",
 						slog.Any("frame", hex.EncodeToString(f)),
 						slog.Int("listeners", len(listeners)))
 					for _, l := range listeners {
 						select {
 						case l <- f:
 						case <-time.After(time.Millisecond * 100):
-							slog.Warn("timeout signalling listener")
+							slog.WarnContext(r.ctx, "timeout signalling listener")
 						}
 					}
 				}
@@ -221,14 +244,14 @@ func (r *IO) StartReader(waitForPackets bool) error {
 		for r.running {
 			n, err := r.Read(frameBuf)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("Error reading: %v", err))
+				slog.WarnContext(ctx, fmt.Sprintf("Error reading: %v", err))
 				return
 			}
 			if n == 0 {
 				continue
 			}
 			_, _ = scannerBuffer.Write(frameBuf[0:n])
-			slog.Debug(fmt.Sprintf("Read %v new bytes", n),
+			slog.DebugContext(r.ctx, fmt.Sprintf("Read %v new bytes", n),
 				slog.Any("newBytes", hex.EncodeToString(frameBuf[0:n])),
 				slog.Any("scannerBufHex", hex.EncodeToString(scannerBuffer.Bytes())))
 
@@ -236,15 +259,15 @@ func (r *IO) StartReader(waitForPackets bool) error {
 				continue
 			}
 
-			// wait for at least 9 bytes in buffer before trying to sync
-			for !synchronized && scannerBuffer.Len() >= 9 {
-				slog.Debug("re-syncing", slog.Bool("synchronized", synchronized))
+			// wait for at least 7 bytes in buffer before trying to sync
+			for !synchronized && scannerBuffer.Len() >= 7 {
+				slog.DebugContext(r.ctx, "re-syncing", slog.Bool("synchronized", synchronized))
 				if scannerBuffer.Bytes()[1] != 0xff {
 					_, _ = scannerBuffer.ReadByte()
 				} else if length := scannerBuffer.Bytes()[0]; scannerBuffer.Len() < int(length) {
 					break // read more data
 				} else if vebus.Checksum(scannerBuffer.Bytes()[0:length+1]) == scannerBuffer.Bytes()[length+1] {
-					slog.Debug("synchronized", slog.Any("scannerBufHex", hex.EncodeToString(scannerBuffer.Bytes())))
+					slog.DebugContext(r.ctx, "synchronized", slog.Any("scannerBufHex", hex.EncodeToString(scannerBuffer.Bytes())))
 					synchronized = true
 					// to wait for sync  before returning from StartReader
 					waitOnce.Do(func() { close(wait) })
@@ -253,7 +276,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 				} else {
 					// drop byte, try again
 					c, _ := scannerBuffer.ReadByte()
-					slog.Debug("dropped byte", slog.Any("byte", c))
+					slog.DebugContext(r.ctx, "dropped byte", slog.Any("byte", c))
 				}
 			}
 			if !synchronized {
@@ -268,7 +291,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 				for scannerBuffer.Len() >= 5 &&
 					bytes.Equal(scannerBuffer.Bytes()[0:5], []byte("UUUUU")) {
 					// only relevant when acting as mk2 server.
-					slog.Debug("drop 'UUUUU' magic")
+					slog.DebugContext(r.ctx, "drop 'UUUUU' magic")
 					_ = scannerBuffer.Next(5)
 				}
 				if scannerBuffer.Len() < 3 {
@@ -277,7 +300,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 
 				length := scannerBuffer.Bytes()[0]
 				if scannerBuffer.Bytes()[1] != 0xff {
-					slog.Warn(fmt.Sprintf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1]))
+					slog.WarnContext(r.ctx, fmt.Sprintf("received 0x%x instead of 0xff marker, trigger re-sync", scannerBuffer.Bytes()[1]))
 					synchronized = false
 					scannerBuffer.Reset()
 					break
@@ -290,7 +313,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 
 				potentialFrame := scannerBuffer.Bytes()[0 : length+2]
 				if cksum := vebus.Checksum(potentialFrame[0 : length+1]); cksum != potentialFrame[length+1] {
-					slog.Warn(fmt.Sprintf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync",
+					slog.WarnContext(r.ctx, fmt.Sprintf("checksum mismatch, got 0x%x, expected 0x%x, trigger re-sync",
 						cksum, potentialFrame[length+1]))
 					synchronized = false
 					scannerBuffer.Reset()
@@ -301,7 +324,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 				f := fullFrame[:length+1]
 
 				select {
-				case <-r.signalShutdown:
+				case <-r.ctx.Done():
 				case frames <- f:
 				}
 			}
@@ -316,7 +339,7 @@ func (r *IO) StartReader(waitForPackets bool) error {
 	select {
 	case <-wait: // for first broadcast
 		return nil
-	case <-r.signalShutdown: // shutdown during init
+	case <-r.ctx.Done(): // shutdown during init
 		return nil
 	case <-time.After(time.Second * 50): // timeout
 		r.Shutdown()
@@ -325,12 +348,12 @@ func (r *IO) StartReader(waitForPackets bool) error {
 }
 
 // Write calculates the checksum and writes the frame to the port.
-func (r *IO) Write(data []byte) {
-	n, err := r.Port.Write(data)
+func (r *IO) WriteContext(ctx context.Context, data []byte) {
+	n, err := r.Write(data)
 	if err != nil {
 		panic(err) // todo
 	}
-	slog.Debug("sent bytes", slog.Int("len", n), slog.Any("data", hex.EncodeToString(data)))
+	slog.DebugContext(ctx, "sent bytes", slog.Int("len", n), slog.Any("data", hex.EncodeToString(data)))
 }
 
 func (r *IO) Close(l chan []byte) {
@@ -346,11 +369,11 @@ func (r *IO) Close(l chan []byte) {
 // Shutdown initiates stop reading.
 // Call Wait() to make sure shutdown is completed.
 func (r *IO) Shutdown() {
-	slog.Debug("try shutdown")
+	slog.DebugContext(r.ctx, "try shutdown")
 	r.commandMutex.Lock()
 	if r.running {
-		slog.Debug("trigger shutdown")
-		close(r.signalShutdown)
+		slog.DebugContext(r.ctx, "trigger shutdown")
+		r.ctxCancel()
 		r.running = false
 	}
 	r.commandMutex.Unlock()
@@ -369,7 +392,7 @@ func (r *IO) NewListenChannel() chan []byte {
 func (r *IO) UpgradeHighSpeed() error {
 	time.Sleep(time.Millisecond * 100)
 
-	n, err := r.Port.Write([]byte{0x02, 0xff, 0x4e, 0xb1})
+	n, err := r.Write([]byte{0x02, 0xff, 0x4e, 0xb1})
 	if err != nil {
 		return fmt.Errorf("failed magic high-speed sequence: %w", err)
 	}
@@ -384,7 +407,7 @@ func (r *IO) UpgradeHighSpeed() error {
 		return fmt.Errorf("failed to set high baud rate: %w", err)
 	}
 
-	n, err = r.Port.Write([]byte("UUUUU"))
+	n, err = r.Write([]byte("UUUUU"))
 	if err != nil {
 		return fmt.Errorf("failed write UUUUU: %w", err)
 	}
@@ -395,4 +418,18 @@ func (r *IO) UpgradeHighSpeed() error {
 	time.Sleep(time.Millisecond * 100)
 
 	return nil
+}
+
+type Frame[ResultT any] interface {
+	Marshal() []byte
+	ParseResponse([]byte) *ResultT
+}
+
+func WriteAndRead[ResultT any](ctx context.Context, io *IO, frame Frame[ResultT]) (*ResultT, error) {
+	var response *ResultT
+	_, err := io.ReadAndWrite(ctx, frame.Marshal(), func(d []byte) bool {
+		response = frame.ParseResponse(d)
+		return response != nil
+	})
+	return response, err
 }
