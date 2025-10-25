@@ -36,6 +36,11 @@
               default = 7.917704;
               description = "longitude WGS-84 geo coordinate";
             };
+            minimumIrradiance = lib.mkOption {
+              type = lib.types.float;
+              default = 150;
+              description = "Threshold of forecasted [W/m²] above which the battery can be charged";
+            };
           };
           options.services.ve-ess-shelly = {
             enable = lib.mkEnableOption "the multiplus + shelly controller";
@@ -83,7 +88,8 @@
                     ${ve-ctrl-tool}/bin/forecast \
                       -http "http://${cfgShelly.http}" \
                       -lat ${toString cfgForecast.lat} \
-                      -lon ${toString cfgForecast.lon}
+                      -lon ${toString cfgForecast.lon} \
+                      -minimumIrradiance ${toString cfgForecast.minimumIrradiance}
                   '';
                   LockPersonality = true;
                   CapabilityBoundingSet = "";

@@ -77,7 +77,7 @@ func main() {
 			fmt.Printf("Send EOF (CTRL-D) or execute 'quit' to exit\n")
 			continue
 		} else if errors.Is(err, io.EOF) {
-			fmt.Printf("\n")
+			fmt.Println("")
 			cancel()
 			break
 		} else {
