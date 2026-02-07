@@ -1,11 +1,9 @@
 module github.com/yvesf/ve-ctrl-tool
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25
 
 require (
-	github.com/bsm/openmetrics v0.3.1
+	github.com/bsm/openmetrics v0.4.0
 	github.com/carlmjohnson/be v0.24.1
 	github.com/containerd/console v1.0.5
 	github.com/felixge/pidctrl v0.0.0-20160307080219-7b13bcae7243
@@ -15,7 +13,7 @@ require (
 )
 
 require (
-	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 )
